@@ -1,0 +1,1 @@
+{"series":[{"data":[125667,126166],"name":"StringWalk_utf16_characters i4","num_iters":4},{"data":[125761,124264,124207,124490],"name":"StringWalk_utf16_characters i2","num_iters":2},{"data":[127167,127033,129481,130419,129111,129039,130602,129123],"name":"StringWalk_utf16_characters i1","num_iters":1}],"type":"num_iters","name":"StringWalk_utf16_characters"}

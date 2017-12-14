@@ -1,0 +1,1 @@
+{"series":[{"data":[119952,120217],"name":"ReversedBidirectional i4","num_iters":4},{"data":[120307,121897,121024,121563],"name":"ReversedBidirectional i2","num_iters":2},{"data":[125996,125296,125686,126763,131039,128894,126136,125060],"name":"ReversedBidirectional i1","num_iters":1}],"type":"num_iters","name":"ReversedBidirectional"}

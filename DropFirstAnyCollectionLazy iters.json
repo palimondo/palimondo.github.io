@@ -1,0 +1,1 @@
+{"series":[{"data":[339567,330975],"name":"DropFirstAnyCollectionLazy i2","num_iters":2},{"data":[339895,328383,334165,323442],"name":"DropFirstAnyCollectionLazy i1","num_iters":1}],"type":"num_iters","name":"DropFirstAnyCollectionLazy"}

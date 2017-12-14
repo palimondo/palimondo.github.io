@@ -1,0 +1,1 @@
+{"series":[{"data":[168700,94535,97406,97363,104813,122604,90896,94088],"name":"DropFirstAnySeqCRangeIterLazy i1","num_iters":1},{"data":[90524,88000],"name":"DropFirstAnySeqCRangeIterLazy i4","num_iters":4},{"data":[92989,87832,87722,87424],"name":"DropFirstAnySeqCRangeIterLazy i2","num_iters":2}],"type":"num_iters","name":"DropFirstAnySeqCRangeIterLazy"}
