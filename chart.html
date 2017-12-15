@@ -482,18 +482,17 @@ function createSeriesCharts(){
   plotLags()
 }
 
+// plotly_click handler
+const selectClickedSeries = click =>
+  selectSeries(series.find(s => s.name.endsWith(click.points[0].data.name))
+    .seriesClass)
+
 function createCharts() {
   // wait(1).then(function () {
     Plotly.newPlot(chart, series.map(traceScatterPlot), layoutAxis(), noModeBar)
-    chart.on('plotly_afterplot', synchromizeZoom)
-    chart.on('plotly_click', function(data){
-      selectSeries(
-        series.find(s => s.name.endsWith(data.points[0].data.name)).seriesClass)
-    });
-    boxplot.on('plotly_click', function(data){
-      selectSeries(
-        series.find(s => s.name.endsWith(data.points[0].data.name)).seriesClass)
-    });
+    chart.on('plotly_afterplot', synchronizeZoom)
+    chart.on('plotly_click', selectClickedSeries)
+    boxplot.on('plotly_click', selectClickedSeries)
   // })
 }
 
@@ -505,8 +504,9 @@ function updateCharts() {
   Plotly.purge('runtimes')
   Plotly.purge('chart')
   Plotly.purge('lag')
-  Plotly.newPlot('chart', series.map(traceScatterPlot), layoutAxis())
-  chart.on('plotly_afterplot', synchromizeZoom)
+  Plotly.newPlot('chart', series.map(traceScatterPlot), layoutAxis(), noModeBar)
+  chart.on('plotly_afterplot', synchronizeZoom)
+  chart.on('plotly_click', selectClickedSeries)
 }
 
 function resetZoom() {
@@ -515,10 +515,10 @@ function resetZoom() {
 
 function zoomAutoscale() {
   Plotly.relayout($('chart'), 'yaxis.autorange', true)
-  wait(1).then(synchromizeZoom)
+  wait(1).then(synchronizeZoom)
 }
 
-function synchromizeZoom() {
+function synchronizeZoom() {
   let bl = $('boxplot').layout
   let vhl = $('vertical-histogram').layout
   bl.yaxis.range = chart.layout.yaxis.range
@@ -601,15 +601,18 @@ const errors = s => outliers(s).map(x => (x - s.rawStats.median) * s.num_iters)
 
 const nameOf = s => s.name.split(' ')[1] // throw away common prefix
 
+const boxplot5numSummary = s =>
+  [s.rawStats.min, s.rawStats.q1, s.rawStats.median, s.rawStats.median,
+    s.rawStats.q3, s.cleanStats.max]
+
 function traceBoxPlot(s) {
+  // console.log(s.name, boxplot5num(s))
   return {
     name: nameOf(s),
     type: 'box',
     opacity: 0.5,
-    y: cleanRuntimes(s),
+    y: boxplot5numSummary(s),
     boxpoints: false,
-    // y: s.data,
-    // boxpoints: 'outliers',
     marker: { color: colorForSeries(s) },
     line : { width: 1.4}
   }}
