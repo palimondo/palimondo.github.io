@@ -250,6 +250,7 @@ function lastNonNull(a) {
     if (a[i] != null) { return i } }
   return -1
 }
+
 // Icons
 const svgNS = 'http://www.w3.org/2000/svg'
 function createIcon(i) { // TODO FIXME variable size? not only 1 em
@@ -272,8 +273,13 @@ function createIcon(i) { // TODO FIXME variable size? not only 1 em
 sheet = document.styleSheets[1]
 const svgString = i => createIcon(i).outerHTML.replace(/\"/g, '\''
   ).replace(/<svg /, `<svg xmlns='${svgNS}' `)
-sheet.insertRule(`#autoscale {background: no-repeat center center url("data:image/svg+xml;utf8,${svgString(Plotly.Icons.autoscale)}");}`, 0)
-sheet.insertRule(`#resetzoom {background: no-repeat center center url("data:image/svg+xml;utf8,${svgString(Plotly.Icons.home)}");}`, 0)
+const iconRule = (selector, icon) => `${selector} {
+  background: no-repeat center center
+  url("data:image/svg+xml;utf8,${svgString(icon)}");}`
+sheet.insertRule(iconRule('#autoscale', Plotly.Icons.autoscale), 0)
+sheet.insertRule(iconRule('#resetzoom', Plotly.Icons.home), 0)
+
+// sheet.insertRule(`#autoscale {background: no-repeat center center url("data:image/svg+xml;utf8,${svgString(Plotly.Icons.autoscale)}");}`, 0)
 
 function traceMeanArea(s) {
   let t = traceScatterPlot(s)
@@ -480,6 +486,14 @@ function createCharts() {
   // wait(1).then(function () {
     Plotly.newPlot(chart, series.map(traceScatterPlot), layoutAxis(), noModeBar)
     chart.on('plotly_afterplot', synchromizeZoom)
+    chart.on('plotly_click', function(data){
+      selectSeries(
+        series.find(s => s.name.endsWith(data.points[0].data.name)).seriesClass)
+    });
+    boxplot.on('plotly_click', function(data){
+      selectSeries(
+        series.find(s => s.name.endsWith(data.points[0].data.name)).seriesClass)
+    });
   // })
 }
 
@@ -722,7 +736,7 @@ function plotVerticalHistogram(s=selectedSeries()) {
       xanchor: 'middle', yanchor: 'top',
       // xref: 'paper', yref: 'paper', x: 'middle', y: 'top',
       // xanchor: 'middle', yanchor: 'top',
-      text: `Bin size: ${Math.ceil(allSeries.cleanStats.max/1000)}`,
+      text: `⩥ ${Math.ceil(allSeries.cleanStats.max/1000)}µs`,
       font: labelFont,
       showarrow: false
     }]
