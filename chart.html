@@ -102,28 +102,7 @@
           </form>
           <table id="series" class="ct-label raw">
             <thead>
-              <tr id="titles">
-                <!-- See function populateStatsTable() -->
-                <th title="Series"></th>
-                <th title="Legend"></th>
-                <th title="Runtimes"></th>
-                <th title="Number of Samples">n</th>
-                <th title="Minimum">Min</th>
-                <th title="Maximum">Max</th>
-                <th title="Range">R</th>
-                <th title="Percent Relative Range">%</th>
-                <th title="1st Quartile">Q1</th>
-                <th title="3rd Quartile">Q3</th>
-                <th title="Interquartile Range">IQR</th>
-                <th title="Percent Relative Interquartile Range">%</th>
-                <th title="Median">Med</th>
-                <th title="Mean">x̅</th>
-                <th title="Strandard Deviation">s</th>
-                <th title="Coeficient of Variation">CV</th>
-                <th title="Top Inner Fence (Q3 + 1.5*IQR)">TIF</th>
-                <th title="Involuntary Context Switches">ICS</th>
-                <th title="Voluntary Context Switches">VCS</th>
-              </tr>
+              <tr id="titles"></tr>
             </thead>
             <tbody id="stats">
             </tbody>
@@ -358,13 +337,29 @@ function cleanRuntimes(s){
   }
 }
 
+const columns = [ // [tooltip (title), th label]
+  ['Series', ''], ['Legend', ''], ['Runtimes', ''], ['Number of Samples', 'n'],
+  ['Minimum', 'Min'], ['Maximum', 'Max'],
+  ['Range', 'R'], ['Percent Relative Range', '%'],
+  ['1st Quartile', 'Q1'], ['3rd Quartile', 'Q3'],
+  ['Interquartile Range', 'IQR'], ['Percent Relative Interquartile Range', '%'],
+  ['Median', 'Med'], ['Mean', 'x̅'],
+  ['Strandard Deviation', 's'], ['Coeficient of Variation', 'CV'],
+  // ['Top Inner Fence (Q3 + 1.5*IQR)', 'TIF'],
+  ['Involuntary Context Switches', 'ICS'],
+  ['Voluntary Context Switches', 'VCS'],
+]
+
 function populateStatsTable() {
-  titles = []
-  var th = $('titles').firstElementChild
-  while (th) {
-    titles.push(th.getAttribute('title'));
-    th = th.nextElementSibling
+  th = ([title, label]) => {
+    let th = document.createElement('th')
+    th.setAttribute('title', title)
+    th.innerHTML = label
+    return th
   }
+  let titlesHeader = $('titles')
+  columns.forEach(t => titlesHeader.appendChild(th(t)))
+  titles = columns.map(([title, label]) => title)
 
   const legendSVG = "<svg width='10' height='6' class='ct-chart-line'>" +
     "<g class='ct-series'><path class='ct-line' d='M0,3h10' />" +
@@ -388,7 +383,7 @@ function populateStatsTable() {
   }
   stats1 = s => [s.n, s.min, s.max, s.range, s.spread]
   stats2 = s => [s.q1, s.q3, s.iqr, s.iqrs,
-    s.median, s.mean, s.sd, s.cv, s.tif]
+    s.median, s.mean, s.sd, s.cv, /*s.tif*/]
 
   values = (s, raw) => {
     sts = raw ? s.rawStats : s.cleanStats
@@ -602,8 +597,8 @@ const errors = s => outliers(s).map(x => (x - s.rawStats.median) * s.num_iters)
 const nameOf = s => s.name.split(' ')[1] // throw away common prefix
 
 const boxplot5numSummary = s =>
-  [s.rawStats.min, s.rawStats.q1, s.rawStats.median, s.rawStats.median,
-    s.rawStats.q3, s.cleanStats.max]
+  [s.rawStats.min, s.rawStats.q1, s.rawStats.median,
+    s.rawStats.median, s.rawStats.q3, s.cleanStats.max]
 
 function traceBoxPlot(s) {
   // console.log(s.name, boxplot5num(s))
