@@ -24,10 +24,8 @@
       .ct-label, #note {font-size: .6rem; fill: rgba(0, 0, 0, .4); color: rgba(0, 0, 0, .4);}
       .ct-series {opacity: 0.5}
       .all-series {fill: Highlight; stroke: Highlight; opacity: 1}
-      .focus .ct-line, .focus .ct-point {opacity:0.15}
-      .focus .selected .ct-line, .focus .selected .ct-point {opacity:1}
       .selected, tr.selected {background-color: Highlight; color: HighlightText}
-      .selected .sparkline {outline: auto; background-color: #fff}
+      .selected .sparkline {outline: auto;}
       tr:hover {background-color: Highlight; }
       td {cursor: pointer;}
       .ct-point {stroke-width: 5px; stroke-linecap: round}
@@ -42,7 +40,7 @@
       caption {text-align: left}
 
       #stats {text-align: right;}
-      .sparkline {background-color: #fafafa66; width: 1rem; height: 1rem;}
+      .sparkline {/*background-color: #fafafa66;*/ width: 1rem; height: 1rem;}
       .sparkline .ct-point {stroke-width: 1px;}
       .raw .clean, .clean .raw {display: none}
       #sparkline {border: 1px solid red; display: none;}
@@ -74,6 +72,17 @@
       .plots {flex: 1 1 49%; display: flex; flex-flow: row wrap; justify-content: space-between; /*border: 1px solid orange;*/}
       .histogram, .runtimes, .lagplot {flex: 1 1 33%; max-width: 14rem; min-width: 12rem;}
       .zoom {float: right}
+
+      td > div.pair, th > div.pair {display: none}
+      @media only screen and (max-width: 580px)  {
+        td > div.pair, th > div.pair {display: block}
+        td > div:not(.pair), th > div:not(.pair) {display: none}
+        tr > td:first-of-type > div:not(.pair) {display: block} /* Runtimes exception*/
+        td {padding: 0}
+        td > div {padding: 0 0.2rem }
+        .ct-major-tenth:before { padding-bottom: 80%}
+        #boxplot, #vertical-histogram {width: 10rem; flex: 0 0 12%}
+      }
     </style>
     <meta name="viewport" content="initial-scale=1.0">
     <script>const $ = id => document.getElementById(id)</script>
@@ -107,7 +116,7 @@
             <tbody id="stats">
             </tbody>
           </table>
-          <div class="ct-chart ct-square sparkline" id="sparkline"></div>
+          <!-- <div class="ct-chart ct-square sparkline" id="sparkline"></div> -->
         </div>
         <div class="plots">
 	        <div class="histogram">
@@ -286,7 +295,6 @@ function selectSeries(s){
       // Plotly.deleteTraces(chart, [0, 1])} // remove mean area and runtimes
     // console.log(`select '${s}' and deselect '${oldSeries}'`)
     if (s && !(s == oldSeries)) {
-      setClass(chart, 'focus')
       Array.from(document.getElementsByClassName(s)).forEach(select)
       Plotly.restyle(chart, 'opacity', 0.1,
         (oldSeries.length > 0) ? [seriesIndex(oldSeries)] : undefined)
@@ -295,7 +303,6 @@ function selectSeries(s){
       // Plotly.addTraces(chart, traceRuntime(series[seriesIndex(s)]), 0)
     } else {
       Plotly.restyle(chart, 'opacity', 0.5)
-      removeClass(chart, 'focus')
     }
   }
 
@@ -338,7 +345,7 @@ function cleanRuntimes(s){
 }
 
 const columns = [ // [tooltip (title), th label]
-  ['Series', ''], ['Legend', ''], ['Runtimes', ''], ['Number of Samples', 'n'],
+  ['Runtimes', ''], ['Series', ''], ['Legend', ''], ['Number of Samples', 'n'],
   ['Minimum', 'Min'], ['Maximum', 'Max'],
   ['Range', 'R'], ['Percent Relative Range', '%'],
   ['1st Quartile', 'Q1'], ['3rd Quartile', 'Q3'],
@@ -350,65 +357,92 @@ const columns = [ // [tooltip (title), th label]
   ['Voluntary Context Switches', 'VCS'],
 ]
 
-function populateStatsTable() {
-  th = ([title, label]) => {
-    let th = document.createElement('th')
-    th.setAttribute('title', title)
-    th.innerHTML = label
-    return th
-  }
-  let titlesHeader = $('titles')
-  columns.forEach(t => titlesHeader.appendChild(th(t)))
-  titles = columns.map(([title, label]) => title)
+function toPairs(acc, v, i, a) {
+  if (i % 2 === 0) acc.push(a.slice(i, i + 2));
+  return acc;
+}
 
-  const legendSVG = "<svg width='10' height='6' class='ct-chart-line'>" +
-    "<g class='ct-series'><path class='ct-line' d='M0,3h10' />" +
-    "<path class='ct-point' d='M5,3h.001'/></g></svg>"
-
-  td = ([title, value]) => {
-    let td = document.createElement('td')
-    td.setAttribute('title', title)
-    if (typeof value === 'number' || typeof value === 'string') {
-      td.innerHTML = value
-    } else {
-      td.appendChild(value)
+function element(type, attributes=null, content=null) {
+  let e = document.createElement(type)
+  for (const attr in attributes) { e.setAttribute(attr, attributes[attr])}
+  if (content) {
+    if (typeof content === 'number' || typeof content === 'string') {
+      e.innerHTML = content
+    } else if (typeof content === 'object') {
+      if (content instanceof Array) {
+        content.filter(c => c ? c : false).forEach(c => {
+          if (c instanceof Node) {
+              e.appendChild(c)
+          } else {
+            console.log(`${e}'s content aren't Nodes: ${typeof c} ${c}`);
+          }
+        })
+      }
+      else { e.appendChild(content) }
     }
-    return td
   }
-  tr = (seriesClass, typeClass, children) => {
-    let tr = document.createElement('tr')
-    tr.setAttribute('class', `${seriesClass} ${typeClass}`)
-    children.forEach(td => tr.appendChild(td))
-    return tr
-  }
+  return e
+}
+
+const legendSVG = "<svg width='10' height='6' class='ct-chart-line'>" +
+  "<g class='ct-series'><path class='ct-line' d='M0,3h10' />" +
+  "<path class='ct-point' d='M5,3h.001'/></g></svg>"
+
+function populateStatsTable() {
+  // Columns are joined to pairs and layed out as nested divs with flex, to
+  // allow for two row formatting on narrow mobile displays
+
+  div = ([title, label]) => element('div', {title: title}, label)
+  divPair = (pair) => element('div', {class: 'pair'},
+    pair.map(([title, label]) => element('div', {title: title}, label)))
+  wrapInDivs = columnPair => columnPair.map((value, i) =>
+    i == 0 ? div(value) : value !== undefined ? divPair(value) : null)
+
+  let titlesHeader = $('titles')
+  // columns.forEach(t => titlesHeader.appendChild(th(t)))
+  zippedSingleAndDouble = zip([columns, columns.reduce(toPairs, [])])
+  const dedupe = ([[a, b], c]) => [[a, b], c === undefined ? c :
+    c.filter(([d, e]) => a !== d || b !== e)]
+  zippedSingleAndDouble.map(dedupe).map(wrapInDivs).forEach(
+    divs => titlesHeader.appendChild(element('th', {}, divs)))
+
+  tr = (seriesClass, typeClass, children) =>
+    element('tr', {class: `${seriesClass} ${typeClass}`}, children)
+
   stats1 = s => [s.n, s.min, s.max, s.range, s.spread]
   stats2 = s => [s.q1, s.q3, s.iqr, s.iqrs,
     s.median, s.mean, s.sd, s.cv, /*s.tif*/]
 
   values = (s, raw) => {
     sts = raw ? s.rawStats : s.cleanStats
-    let line = sparkline.cloneNode(false)
+    let line = element('div', {class: "ct-chart ct-square sparkline"})
     line.removeAttribute('id')
     let ss = raw ? s : {
       runtimes: cleanRuntimes(s), name: s.name, seriesClass: s.seriesClass }
     sparklines.push(_ => // wait until the line div is inserted into the table,
       Plotly.newPlot( // can't plot to element not attached to the document
         line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot))
-    // wait(1).then(_ => // wait until the line div is inserted into the table,
-    //   Plotly.newPlot( // can't plot to element not attached to the document
-    //     line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot))
-    return [nameOf(s), legendSVG, line, ...stats1(sts), ...stats2(sts),
+    return [line, nameOf(s), legendSVG, ...stats1(sts), ...stats2(sts),
       (s.involuntary_cs ? s.involuntary_cs : '—'),
       (s.voluntary_cs ? s.voluntary_cs : '—')]
   }
 
-  rows = []
+  let titles = columns.map(([title, label]) => title)
+  let rows = []
+
+  const wrapInTd = c => element('td', {}, c)
+
   series.forEach(s => {
+    vals = zip([titles, values(s, false)])
+    zippedVals = zip([vals, vals.reduce(toPairs, [])])
     rows.push(tr(s['seriesClass'], 'clean',
-      zip([titles, values(s, false)]).map(td)))
+      zippedVals.map(dedupe).map(wrapInDivs).map(wrapInTd)))
+    vals = zip([titles, values(s, true)])
+    zippedVals = zip([vals, vals.reduce(toPairs, [])])
     rows.push(tr(s['seriesClass'], 'raw',
-      zip([titles, values(s, true)]).map(td)))
+      zippedVals.map(dedupe).map(wrapInDivs).map(wrapInTd)))
   })
+  let statsTable = $('stats')
   rows.reverse().forEach(tr => statsTable.appendChild(tr))
 }
 
@@ -491,6 +525,22 @@ function createCharts() {
   // })
 }
 
+function removeFixedPlotDimensions(id) {
+  let plot = Plotly.d3.select(`#${id}`).select('.svg-container')
+  plot.style('height', null).style('width', null)
+  plot.selectAll('.main-svg').attr('height', null).attr('width', null)
+}
+
+windowWidth = window.innerWidth
+window.onresize = function() {
+    if (windowWidth == window.innerWidth) return
+    windowWidth = window.innerWidth
+    // Remove all fixed widths and heights from charts
+    charts = ['boxplot', 'vertical-histogram', 'chart']
+    charts.forEach(removeFixedPlotDimensions)
+    wait(10).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
+}
+
 function updateCharts() {
   // this purges are required when the stats table changes width,
   // otherwise the chart would not shrink when table expands (Clean -> Raw)
@@ -562,24 +612,31 @@ function computeStats(a) { // assumes `a` is sorted ascending
   }
 }
 
+
+// Sparkline layout
+const padedRangeForSparkline = ([s, e]) => {
+  p = (e - s)/32 // sparkline is 1em (16px) square; inset edges by half a point
+  return [s-p, e+p]
+}
+const xRangeSparkline = s => padedRangeForSparkline([0, s.runtimes.length-1])
+const yRangeSparkline = s =>
+  padedRangeForSparkline([s.runtimes[0], s.runtimes[s.runtimes.length - 1]])
+const sparklineAxis = {showticklabels: false, showgrid: false, zeroline: false}
+
 const sparklineLayoutFor = s => {
-  let l = {
-    yaxis: {showticklabels: false, showgrid: false, zeroline: false,},
-    xaxis: {showticklabels: false, showgrid: false, zeroline: false,},
+  return {
+    yaxis: join(sparklineAxis, {range:  yRangeSparkline(s)}),
+    xaxis: join(sparklineAxis, {range:  xRangeSparkline(s)}),
     showlegend: false,
     margin: { l: 0, r: 0, b: 0, t: 0, pad: 0},
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
   }
-  l.xaxis.range = [0, s.runtimes.length-1]
-  l.yaxis.range = [s.runtimes[0], s.runtimes[s.runtimes.length - 1]]
-  return l
 }
 
 const staticPlot =  {staticPlot: true, displayModeBar: false,}
 
-
-
 const sum = (a, c) => a + c
-
 const suma = ([a, c]) => a + c
 const outliers = s => s.data.filter(x => x > s.rawStats.tif)
 const propers = s => s.data.filter(x => x <= s.rawStats.tif)
@@ -803,9 +860,8 @@ const noModeBar = {displayModeBar: false,}
 
 
 let chart = $('chart')
-let statsTable = $('stats')
 let histogram = $('histogram')
-let sparkline = $('sparkline')
+// let sparkline = $('sparkline')
 
 let sparklines = []
 var series = {}
