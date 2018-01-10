@@ -25,8 +25,13 @@
       .ct-series {opacity: 0.5}
       .all-series {fill: Highlight; stroke: Highlight; opacity: 1}
       .selected, tr.selected {background-color: Highlight; color: HighlightText}
-      .selected .sparkline {outline: auto;}
-      tr:hover {background-color: Highlight; }
+      .selected .sparkline {outline: auto; background-color: white;}
+      .selected td:nth-child(n+11):nth-child(-n+16) {
+        background: linear-gradient(to bottom, Highlight 0%, Highlight 10%,
+          white 10%, white 90%, rgba(0,0,0,0) 90%, rgba(0,0,0,0) 100%)
+      }
+      .selected td:nth-child(n+13):nth-child(-n+13) { font-weight: bolder}
+      tbody tr:hover {background-color: Highlight; }
       td {cursor: pointer;}
       .ct-point {stroke-width: 5px; stroke-linecap: round}
       h1 {font-size: 1.5rem}
@@ -34,7 +39,7 @@
 
       .series h2 {float:left; margin-right: .5rem;}
       .series form {clear: none; color: black; font-size: 0.75rem; margin-top: 0.1rem;}
-      #note {display: inline; margin-left: 2em;}
+      #note {display: inline; margin-left: .8em;}
 
       table, table.raw, table.clean {caption-side: top !important;}
       caption {text-align: left}
@@ -82,6 +87,13 @@
         td > div {padding: 0 0.2rem }
         .ct-major-tenth:before { padding-bottom: 80%}
         #boxplot, #vertical-histogram {width: 10rem; flex: 0 0 12%}
+        .selected td:nth-child(n+11):nth-child(-n+16) {background: none}
+        .selected td:nth-child(n+6):nth-child(-n+8) {
+          background: linear-gradient(to bottom, Highlight 0%, Highlight 10%,
+            white 10%, white 90%, rgba(0,0,0,0) 90%, rgba(0,0,0,0) 100%)
+        }
+        .selected td:nth-child(n+7):nth-child(-n+7) .pair div:first-child {
+          font-weight: bolder}
       }
     </style>
     <meta name="viewport" content="initial-scale=1.0">
@@ -185,8 +197,8 @@ const colors = [
   'rgb(5, 68, 211)', 'rgb(107, 3, 146)', 'rgb(240, 91, 79)',
   'rgb(221, 164, 88)', 'rgb(234, 207, 125)', 'rgb(134, 121, 125)',
   'rgb(178, 195, 38)', 'rgb(97, 136, 226)']
-const colorForSeries = s => (s.seriesClass == 'all-series') ?
-  'rgb(58, 153, 250)' : // Highlight blue
+const highlightBlue = 'rgb(58, 153, 250)'
+const colorForSeries = s => (s.seriesClass == 'all-series') ? highlightBlue :
   colors[seriesIndex(s.seriesClass)]
 const rgba = (color, opacity) => `rgba${color.slice(3, -1)}, ${opacity})`
 const rbgaForSeries = s =>
@@ -212,9 +224,12 @@ const labelFont = join(systemFont, {color: 'rgba(0, 0, 0, 0.4)'})
 
 function generateSeriesCSS() {
   sheet = document.styleSheets[1]
-  zip([series, colors]).forEach(([s, color]) => {
+  const insertSeriesColorRules = ([s, color]) => {
     sheet.insertRule(seriesColorRule(s.seriesClass, color), 0)
-    sheet.insertRule(rowColorRule(s.seriesClass, color), 0) })
+    sheet.insertRule(rowColorRule(s.seriesClass, color), 0)
+  }
+  zip([series, colors]).forEach(insertSeriesColorRules)
+  insertSeriesColorRules([allSeries, highlightBlue])
   series.forEach(s => sheet.insertRule(
 	  seriesLineRule(s.seriesClass, s.data.length), 0))
 }
@@ -288,11 +303,11 @@ function selectSeries(s){
   } else {
     selected = Array.from(document.getElementsByClassName('selected'))
     selected.forEach(deselect)
+    selected = selected.filter(e => !classes(e).includes('all-series'))
     oldSeries = selected.reduce((_, e) => getSeries(classes(e)), '') // XXX undefined instead of ''?
     let chart = $('chart')
     if (selected.length > 0){
       Plotly.deleteTraces(chart, 0)} // remove mean area
-      // Plotly.deleteTraces(chart, [0, 1])} // remove mean area and runtimes
     // console.log(`select '${s}' and deselect '${oldSeries}'`)
     if (s && !(s == oldSeries)) {
       Array.from(document.getElementsByClassName(s)).forEach(select)
@@ -300,8 +315,8 @@ function selectSeries(s){
         (oldSeries.length > 0) ? [seriesIndex(oldSeries)] : undefined)
       Plotly.restyle(chart, 'opacity', 0.6, [seriesIndex(s)])
       Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
-      // Plotly.addTraces(chart, traceRuntime(series[seriesIndex(s)]), 0)
     } else {
+      Array.from(document.getElementsByClassName('all-series')).forEach(select)
       Plotly.restyle(chart, 'opacity', 0.5)
     }
   }
@@ -432,7 +447,7 @@ function populateStatsTable() {
 
   const wrapInTd = c => element('td', {}, c)
 
-  series.forEach(s => {
+  const generateSeriesStatRows = s => {
     vals = zip([titles, values(s, false)])
     zippedVals = zip([vals, vals.reduce(toPairs, [])])
     rows.push(tr(s['seriesClass'], 'clean',
@@ -441,9 +456,14 @@ function populateStatsTable() {
     zippedVals = zip([vals, vals.reduce(toPairs, [])])
     rows.push(tr(s['seriesClass'], 'raw',
       zippedVals.map(dedupe).map(wrapInDivs).map(wrapInTd)))
-  })
+  }
+
+  series.forEach(generateSeriesStatRows)
+  generateSeriesStatRows(allSeries)
+
   let statsTable = $('stats')
   rows.reverse().forEach(tr => statsTable.appendChild(tr))
+  Array.from(document.getElementsByClassName('all-series')).forEach(select)
 }
 
 function traceRuntime(s, opacity=0.5) {
@@ -463,6 +483,7 @@ function traceRuntime(s, opacity=0.5) {
   }}
 function traceScatterPlot(s) {
   let isRaw = seriesIsRaw()
+  // TODO subtract setup overhead here during filtering
   let filtered = s => s.data.map(
     runtime => ((isRaw || runtime <= s.cutoff) ? runtime : null ))
   return {
@@ -864,7 +885,7 @@ let histogram = $('histogram')
 // let sparkline = $('sparkline')
 
 let sparklines = []
-var series = {}
+var series = []
 let maxLength
 var runtimes = []
 let allSeries
@@ -877,6 +898,15 @@ const descendingByIterationsAndName = (a, b) =>
   (b.num_iters - a.num_iters) * 100 - a.name.localeCompare(b.name)
 const ascending = (a,b) => a - b
 const descending = (a,b) => b - a
+
+Array.prototype.groupBy = function(prop) {
+  return this.reduce(function(groups, item) {
+    var val = item[prop];
+    groups[val] = groups[val] || [];
+    groups[val].push(item);
+    return groups;
+  }, {});
+}
 
 function getParam(name, defaultValue='') {
   let value = (new URLSearchParams(location.search)).get(name)
@@ -893,9 +923,12 @@ fetch(logFile).then(function(response) {
 
   const _2k = 2048
   const max = (a, b) => Math.max(a, b)
+  const min = (a, b) => Math.min(a, b)
+
   let maxSeriesLength = data.series.map(s => s.data.length).reduce(max)
   if (maxSeriesLength > _2k) {
-    $('note').innerHTML = 'Series longer than 2k were trimmed.'
+    // $('note').innerHTML = 'Series longer than 2k were trimmed.'
+    $('note').innerHTML = 'Trimmed series w/ n > 2k.'
   }
   data.series.forEach(s => {
     let l = s.data.length
@@ -909,9 +942,13 @@ fetch(logFile).then(function(response) {
   // Prepare runtimes for histogram
   allSeries.runtimes = []
   allSeries.data = []
+  allSeries.involuntary_cs = 0
+  allSeries.involuntary_cs = 0
   series.forEach(s => {
     allSeries.runtimes = s.data.concat(allSeries.runtimes)
     allSeries.data = s.data.concat(allSeries.data)
+    allSeries.involuntary_cs += s.involuntary_cs
+    allSeries.voluntary_cs += s.voluntary_cs
     s.runtimes = s.data.slice().sort(ascending)
     s.rawStats = computeStats(s.runtimes)
     s.cutoff = s.rawStats.tif
@@ -921,13 +958,45 @@ fetch(logFile).then(function(response) {
   allSeries.rawStats = computeStats(allSeries.runtimes)
   allSeries.cleanStats = computeStats(cleanRuntimes(allSeries)) // is fine here
   allSeries.cutoff = allSeries.cleanStats.max
-  allSeries['seriesClass'] = 'all-series'
+  allSeries.seriesClass = 'all-series'
+  allSeries.name += ' all'
 
   zip([series, seriesClassSuffixes]).forEach(
     ([s, scs]) => s['seriesClass'] = seriesClassPrefix + scs)
 
   generateSeriesCSS()
   populateStatsTable()
+
+  // Compute startup overhead
+  // iterations i = 1, j = 2
+  // s = (i * j (ti -tj)) / j - i
+  // startup_overhead = 2 (ti - tj)
+  iterations = series.groupBy('num_iters')
+  // let [n, M, S] = a.reduce(runningMeanVariance, [0, 0, 0])
+  const seriesMin = (series, stat) =>
+    series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
+  // const seriesAverage = (series, stat) =>
+  //   series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
+  // const seriesAverage = (series, stat) =>
+  //   round(series.map(s => s.rawStats[stat]
+  //   ).reduce(runningMeanVariance, [0, 0, 0])[1])
+
+  let ti = seriesMin(iterations[1], 'min')
+  let tj = seriesMin(iterations[2], 'min')
+  let setup = 2*(ti-tj)
+  let ratio = setup/ti
+  if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
+    let note = $('note')
+    note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+  }
+  console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
+
+  // let ti = seriesAverage(iterations[1], 'q1')
+  // let tj = seriesAverage(iterations[2], 'q1')
+  // console.log([ti, tj, 2*(ti-tj)]);
+  // let tk = seriesAverageMinimum(iterations[4])
+  // console.log([tj, tk, 8*(tj-tk)/2]);
+
 }).then(function(){ // Create Series Charts
   plotHistogram()
   wait(1).then(plotRuntimes)
@@ -963,8 +1032,6 @@ fetch(logFile).then(function(response) {
 /* TODO ?
  - add micro histograms to table
  - Excludes Outliers: iteratively (while TIF < MAX), do also Bottom Inner Fence
- - Plotly vs. responsive design
- - Speed-up charts with 16k+ samples? use type: 'scattergl', 'pointcloud'
 */
 </script>
   </body>
