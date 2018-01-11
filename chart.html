@@ -559,7 +559,7 @@ window.onresize = function() {
     // Remove all fixed widths and heights from charts
     charts = ['boxplot', 'vertical-histogram', 'chart']
     charts.forEach(removeFixedPlotDimensions)
-    wait(10).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
+    wait(100).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
 }
 
 function updateCharts() {
@@ -981,15 +981,17 @@ fetch(logFile).then(function(response) {
   //   round(series.map(s => s.rawStats[stat]
   //   ).reduce(runningMeanVariance, [0, 0, 0])[1])
 
-  let ti = seriesMin(iterations[1], 'min')
-  let tj = seriesMin(iterations[2], 'min')
-  let setup = 2*(ti-tj)
-  let ratio = setup/ti
-  if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
-    let note = $('note')
-    note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+  if (iterations.length > 1) {
+    let ti = seriesMin(iterations[1], 'min')
+    let tj = seriesMin(iterations[2], 'min')
+    let setup = 2*(ti-tj)
+    let ratio = setup/ti
+    if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
+      let note = $('note')
+      note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+    }
+    console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
   }
-  console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
 
   // let ti = seriesAverage(iterations[1], 'q1')
   // let tj = seriesAverage(iterations[2], 'q1')
