@@ -554,12 +554,13 @@ function removeFixedPlotDimensions(id) {
 
 windowWidth = window.innerWidth
 window.onresize = function() {
+    return // disable loop for testing
     if (windowWidth == window.innerWidth) return
     windowWidth = window.innerWidth
     // Remove all fixed widths and heights from charts
     charts = ['boxplot', 'vertical-histogram', 'chart']
     charts.forEach(removeFixedPlotDimensions)
-    wait(100).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
+    wait(10).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
 }
 
 function updateCharts() {
