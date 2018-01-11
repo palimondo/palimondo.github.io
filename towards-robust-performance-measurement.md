@@ -57,9 +57,8 @@ This results in effective run times around 1 second per benchmark, but the bench
 ### Increased Measurement Frequency
 I’ve realized that it is possible to trade `num-iters` for `num-samples` while maintaining the same ~1 second run time, just increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration! Or anything in between. 
 
-<iframe src=“chart.html?f=Dictionary+ten.json” name=“Dictionary+ten”>
-  [Dictionary+ten](chart.html?f=Dictionary+ten.json)
-</iframe>
+<iframe src="chart.html?f=Dictionary+ten.json" name="Dictionary+ten" frameborder="0" width="100%" height="350">
+[Dictionary+ten](chart.html?f=Dictionary+ten.json)</iframe>
 
 Having more samples allows us to use statistical methods to improve the quality of our measurements. Finer granularity sampling revealed two other source of instability.
 
