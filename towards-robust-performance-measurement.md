@@ -45,17 +45,23 @@ At that point I was visualizing the samples with graphs in Numbers, but it was v
 
 In the following I’ll be presenting sample visualizations and statistical graphics from [`chart.html`](https://github.com/palimondo/palimondo.github.io/blob/master/chart.html). You can click on the links to explore the raw and filtered data yourself in the web browser. Note that my measurements were performed on Late 2008 MacBook Pro with 2.4 GHz Intel Core 2 Duo CPU which is approximately an order of magnitude slower then the Mac Minis used to run benchmarks by CI bots. 
 
-## Scaling within Brackets
+### Scaling within Brackets
 I have done several runs of the whole suite with different parameters for the `Benchmark_X`. First I have tried to partially approximate the automatic scaling of the benchmark to make it run for approximately 1 second like the test harness does in case the `--num-iters` parameter is not set (or set to 0), but with a twist:
 
 * Collect 3 samples with `--num-iters=1` (empirically: 1st sample is very often an outlier, but by the 3rd sample it’s usually in the ballpark of true value)
 * Use the minimum runtime to compute number of iterations to make the performance test run for ~1s
 * Round the number of iterations up to the nearest power of two
 
-This results in effective run times between 1 and 2 seconds per benchmark, but the benchmarks are grouped into more stable bins that allow for easier comparison between runs. It eliminates one source of measurement noise caused by the auto-scaling of the benchmarks — varying number of iterations per sample that was causing unstable and non-deterministic memory consumption depending on how many other processes were interfering with the measurements.
+This results in effective run times around 1 second per benchmark, but the benchmarks are grouped into more stable bins that allow for easier comparison between runs. It eliminates one source of measurement noise caused by the auto-scaling of the benchmarks — varying number of iterations per sample that was causing unstable and non-deterministic memory consumption depending on how many other processes were interfering with the measurements.
 
-## Increased Measurement Frequency
-I’ve realized that it is possible to trade `num-iters` for `num-samples` while maintaining the same 1—2 seconds run time, just increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration! Or anything in between. Having more samples allows us to use statistical methods to improve the quality of our measurements. Finer granularity sampling revealed two other source of instability.
+### Increased Measurement Frequency
+I’ve realized that it is possible to trade `num-iters` for `num-samples` while maintaining the same ~1 second run time, just increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration! Or anything in between. 
+
+<iframe src=“chart.html?f=Dictionary+ten.json” name=“Dictionary+ten”>
+  [Dictionary+ten](chart.html?f=Dictionary+ten.json)
+</iframe>
+
+Having more samples allows us to use statistical methods to improve the quality of our measurements. Finer granularity sampling revealed two other source of instability.
 
 TK setup work, context switching
 
