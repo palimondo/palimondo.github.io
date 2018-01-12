@@ -3,6 +3,7 @@
   <head>
     <title>Sample distribution</title>
     <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style> /* ct- prefixed rules come from Chartist.js */
       body {font-family: system-ui, -apple-system;}
@@ -95,6 +96,7 @@
         .selected td:nth-child(n+7):nth-child(-n+7) .pair div:first-child {
           font-weight: bolder}
       }
+
     </style>
     <meta name="viewport" content="initial-scale=1.0">
     <script>const $ = id => document.getElementById(id)</script>
@@ -235,7 +237,7 @@ function generateSeriesCSS() {
 }
 
 // Timing helpers
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const wait = (ms=1) => new Promise(resolve => setTimeout(resolve, ms))
 
 // Array slicing & dicing helpers
 function bisect_right(a, x, lo=0, hi=a.length) {
@@ -299,35 +301,38 @@ function traceMeanArea(s) {
 function selectSeries(s){
   if (s && s.id) {
     $('series').className = `ct-label ${s.id}`
-    updateCharts()
+    // FIXME Handle switching raw/clean series when a serie is selected
+    plotVerticalHistogram().then(plotHistogram).then(plotLags)
+      .then(wait).then(plotRuntimes).then(wait).then(plotScatterplot)
   } else {
     selected = Array.from(document.getElementsByClassName('selected'))
     selected.forEach(deselect)
     selected = selected.filter(e => !classes(e).includes('all-series'))
-    oldSeries = selected.reduce((_, e) => getSeries(classes(e)), '') // XXX undefined instead of ''?
+    oldSeries = selected.reduce((_, e) => getSeries(classes(e)), undefined)
     let chart = $('chart')
     if (selected.length > 0){
       Plotly.deleteTraces(chart, 0)} // remove mean area
     // console.log(`select '${s}' and deselect '${oldSeries}'`)
-    if (s && !(s == oldSeries)) {
+    if (s) { // if (s && !(s == oldSeries)) {
       Array.from(document.getElementsByClassName(s)).forEach(select)
-      Plotly.restyle(chart, 'opacity', 0.1,
-        (oldSeries.length > 0) ? [seriesIndex(oldSeries)] : undefined)
-      Plotly.restyle(chart, 'opacity', 0.6, [seriesIndex(s)])
-      Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
+      plotVerticalHistogram().then(plotHistogram).then(plotLags)
+      .then(function(){
+        let opacity = Array(series.length).fill(oldSeries ? undefined : 0.1)
+        if (oldSeries) { opacity[seriesIndex(oldSeries)] = 0.1 }
+        opacity[seriesIndex(s)] = 0.6
+        Plotly.restyle(chart, {opacity: opacity})
+        Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
+      }).then(wait).then(plotRuntimes)
     } else {
       Array.from(document.getElementsByClassName('all-series')).forEach(select)
-      Plotly.restyle(chart, 'opacity', 0.5)
+      plotVerticalHistogram().then(plotHistogram).then(plotLags)
+      .then(function(){
+        Plotly.restyle(chart, {opacity: 0.5})
+      }).then(wait).then(plotRuntimes)
     }
   }
-
-  plotVerticalHistogram()
-  plotHistogram()
-  plotRuntimes()
-  plotLags()
 }
-document.onclick = ev => selectSeries(findSeries(ev.target))
-document.ontap = ev => selectSeries(findSeries(ev.target))
+
 document.onkeydown = selectSeriesWithKeyboard;
 
 function selectSeriesWithKeyboard(e) {
@@ -462,6 +467,7 @@ function populateStatsTable() {
   generateSeriesStatRows(allSeries)
 
   let statsTable = $('stats')
+  rows.forEach(tr => tr.onclick = ev => selectSeries(findSeries(ev.target)))
   rows.reverse().forEach(tr => statsTable.appendChild(tr))
   Array.from(document.getElementsByClassName('all-series')).forEach(select)
 }
@@ -526,55 +532,44 @@ function layoutAxis() {
   return f
 }
 
-function createSeriesCharts(){
-  plotHistogram()
-  plotRuntimes()
-  plotLags()
-}
-
 // plotly_click handler
-const selectClickedSeries = click =>
-  selectSeries(series.find(s => s.name.endsWith(click.points[0].data.name))
-    .seriesClass)
+const selectClickedSeries = click => selectSeries(
+  series.find(s => s.name.endsWith(click.points[0].data.name)).seriesClass)
 
-function createCharts() {
-  // wait(1).then(function () {
-    Plotly.newPlot(chart, series.map(traceScatterPlot), layoutAxis(), noModeBar)
-    chart.on('plotly_afterplot', synchronizeZoom)
-    chart.on('plotly_click', selectClickedSeries)
-    boxplot.on('plotly_click', selectClickedSeries)
-  // })
+const fixDimensions = (plot) => () => fixRelativeDimensions(plot)
+
+function fixRelativeDimensions(e) {
+  Plotly.d3.select(e).select('.plot-container').style('height', '100%')
+  let plot = Plotly.d3.select(e).select('.svg-container')
+  plot.style('height', '100%').style('width', null)
+  plot.selectAll('.main-svg').attr('height', '100%').attr('width', '100%')
 }
 
-function removeFixedPlotDimensions(id) {
-  let plot = Plotly.d3.select(`#${id}`).select('.svg-container')
-  plot.style('height', null).style('width', null)
-  plot.selectAll('.main-svg').attr('height', null).attr('width', null)
-}
+const mainCharts = ['boxplot', 'vertical-histogram', 'chart']
 
+/// Window resizing
 windowWidth = window.innerWidth
-window.onresize = function() {
-    return // disable loop for testing
+function resizeMainCharts() {
     if (windowWidth == window.innerWidth) return
     windowWidth = window.innerWidth
-    // Remove all fixed widths and heights from charts
-    charts = ['boxplot', 'vertical-histogram', 'chart']
-    charts.forEach(removeFixedPlotDimensions)
-    wait(10).then(function (){charts.forEach(c => Plotly.Plots.resize($(c)))})
+    mainCharts.forEach(c =>
+      Plotly.Plots.resize($(c)))
 }
+// window.onresize = resizeMainCharts
 
-function updateCharts() {
-  // this purges are required when the stats table changes width,
-  // otherwise the chart would not shrink when table expands (Clean -> Raw)
-  // causing the page to scroll horizontally
-  Plotly.purge('histogram')
-  Plotly.purge('runtimes')
-  Plotly.purge('chart')
-  Plotly.purge('lag')
-  Plotly.newPlot('chart', series.map(traceScatterPlot), layoutAxis(), noModeBar)
-  chart.on('plotly_afterplot', synchronizeZoom)
-  chart.on('plotly_click', selectClickedSeries)
-}
+(function() {
+  window.addEventListener("resize", resizeThrottler, false);
+  var resizeTimeout;
+  function resizeThrottler() {
+    // ignore resize events as long as an handler execution is in the queue
+    if ( !resizeTimeout ) {
+      resizeTimeout = setTimeout(function() {
+        resizeTimeout = null;
+        resizeMainCharts();
+     }, 1000) // at most once per second
+    }
+  }
+}());
 
 function resetZoom() {
   Plotly.relayout($('chart'), layoutAxis(), true)
@@ -582,16 +577,23 @@ function resetZoom() {
 
 function zoomAutoscale() {
   Plotly.relayout($('chart'), 'yaxis.autorange', true)
-  wait(1).then(synchronizeZoom)
+}
+
+const isEqual = (a1, a2) =>
+  a1.length==a2.length && a1.every((v,i)=> v === a2[i])
+
+function updateYRange(plot, range) {
+  let l = plot.layout
+  if (!isEqual(l.yaxis.range, range)) {
+    l.yaxis.range = range
+    Plotly.relayout(plot, l)
+  }
 }
 
 function synchronizeZoom() {
-  let bl = $('boxplot').layout
-  let vhl = $('vertical-histogram').layout
-  bl.yaxis.range = chart.layout.yaxis.range
-  vhl.yaxis.range = chart.layout.yaxis.range
-  Plotly.relayout('boxplot', bl)
-  Plotly.relayout('vertical-histogram', vhl)
+  let chartRange = chart.layout.yaxis.range.slice()
+  let plots = ['boxplot', 'vertical-histogram']
+  plots.forEach(p => updateYRange($(p), chartRange.slice()))
 }
 
 function selectedSeries() {
@@ -732,10 +734,11 @@ function plotLags() {
   selected =
     seriesClass ? series.find(s => s.seriesClass == seriesClass) : allSeries
 
-  Plotly.newPlot('lag', traceLag(selected, 1), axisFormat(), noModeBar)
+  return Plotly.newPlot('lag', traceLag(selected, 1), axisFormat(), noModeBar)
 }
 
-function plotRuntimes(series=selectedSeries()) {
+function plotRuntimes() {
+  let series = selectedSeries()
   let {runtimes, seriesClass} = series
   let s = computeStats(runtimes)
   tifIndex = bisect(runtimes, series.cutoff)
@@ -800,13 +803,11 @@ function plotRuntimes(series=selectedSeries()) {
       },
     ] : []
 // console.log('runtimes starting plot')
-  Plotly.newPlot('runtimes',
-  [rt, t],
-  layout,
-  noModeBar)
+  return Plotly.newPlot('runtimes', [rt, t], layout, noModeBar)
 }
 
-function plotVerticalHistogram(s=selectedSeries()) {
+function plotVerticalHistogram() {
+  let s = selectedSeries()
   let l = layoutSansAxis()
   l.annotations = [{
       xref: 'paper', yref: 'paper', x: 0, y: 0,
@@ -817,14 +818,18 @@ function plotVerticalHistogram(s=selectedSeries()) {
       font: labelFont,
       showarrow: false
     }]
-  Plotly.newPlot('vertical-histogram',
-    [traceVerticalHistogram(s)], l, noModeBar)
+
+  let vh = $('vertical-histogram')
+  let p = Plotly.newPlot(vh, [traceVerticalHistogram(s)], l, noModeBar)
+  vh.on('plotly_afterplot', fixDimensions(vh))
+  return p
 }
 
-function plotHistogram(s=selectedSeries()) {
+function plotHistogram() {
+  let s = selectedSeries()
   let {runtimes, seriesClass} = s
   // let {min, max, mean, sd, runtimes, seriesClass} = s
-  let {min, max, mean, sd} = computeStats(s.runtimes)
+  let {min, max, mean, sd} = computeStats(runtimes)
 
   bs = (sd > 1) ? sd : 1 // bucket size
   lo = mean - (Math.ceil((mean-min)/bs)*bs)
@@ -855,7 +860,7 @@ function plotHistogram(s=selectedSeries()) {
   layout.margin.r = 7
   layout.margin.l = 2 + (''+yTicks[0]).length * 7 // label length
 
-  Plotly.newPlot('histogram',
+  return Plotly.newPlot('histogram',
   [{
     name: nameOf(s), type: 'histogram', hoverinfo:'x+y',
     x: s.runtimes,
@@ -865,6 +870,33 @@ function plotHistogram(s=selectedSeries()) {
   layout,
   noModeBar)
 }
+
+// function plotBoxplot() {
+//   return Plotly.newPlot(boxplot, series.map(traceBoxPlot).reverse(),
+//     join(layoutSansAxis(), {hovermode: ''}), noModeBar)
+// }
+
+function plotBoxplot () {
+  let bp = $('boxplot')
+  let p = Plotly.newPlot(bp,
+    series.map(traceBoxPlot).reverse(),
+    join(layoutSansAxis(), {hovermode: ''}), noModeBar)
+  bp.on('plotly_click', selectClickedSeries)
+  bp.on('plotly_afterplot', fixDimensions(bp))
+  return p
+}
+
+
+function plotScatterplot() {
+  // FIXME Handle switching raw/clean series when a serie is selected
+  let p = Plotly.newPlot(chart,
+    series.map(traceScatterPlot), layoutAxis(), noModeBar)
+  chart.on('plotly_afterplot', synchronizeZoom)
+  chart.on('plotly_afterplot', fixDimensions(chart))
+  chart.on('plotly_click', selectClickedSeries)
+  return p
+}
+
 
 function layoutSansAxis() {
   p = allSeries.cleanStats.range * 0.01
@@ -973,19 +1005,18 @@ fetch(logFile).then(function(response) {
   // s = (i * j (ti -tj)) / j - i
   // startup_overhead = 2 (ti - tj)
   iterations = series.groupBy('num_iters')
-  // let [n, M, S] = a.reduce(runningMeanVariance, [0, 0, 0])
   const seriesMin = (series, stat) =>
     series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
-  // const seriesAverage = (series, stat) =>
-  //   series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
-  // const seriesAverage = (series, stat) =>
-  //   round(series.map(s => s.rawStats[stat]
-  //   ).reduce(runningMeanVariance, [0, 0, 0])[1])
 
-  if (iterations.length > 1) {
-    let ti = seriesMin(iterations[1], 'min')
-    let tj = seriesMin(iterations[2], 'min')
-    let setup = 2*(ti-tj)
+  is = Object.keys(iterations).sort(ascending)
+
+  if (is.length > 1) {
+    let i = is[0]
+    let j = is[1]
+    let ti = seriesMin(iterations[i], 'min')
+    let tj = seriesMin(iterations[j], 'min')
+    // let setup = 2*(ti-tj)
+    let setup = (i * j * (ti -tj)) / j - i
     let ratio = setup/ti
     if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
       let note = $('note')
@@ -1000,16 +1031,17 @@ fetch(logFile).then(function(response) {
   // let tk = seriesAverageMinimum(iterations[4])
   // console.log([tj, tk, 8*(tj-tk)/2]);
 
-}).then(function(){ // Create Series Charts
-  plotHistogram()
+})
+.then(plotVerticalHistogram)
+.then(plotBoxplot)
+.then(plotHistogram)
+.then(plotLags)
+.then(function(){
+  // These charts take longer to plot, delay them a bit, so that
+  // faster charts above are displayed as soon as possible
   wait(1).then(plotRuntimes)
-  plotLags()
-  Plotly.newPlot(boxplot,
-    series.map(traceBoxPlot).reverse(), join(layoutSansAxis(), {hovermode: ''}), noModeBar)
-  plotVerticalHistogram()
-}).then(function(){ // Create main scattert plot and then plot sparklines
-  wait(1).then(createCharts)
-  sparklines.forEach(plot => wait(1).then(plot))
+  wait(10).then(plotScatterplot)
+  sparklines.forEach(plot => wait(1000).then(plot))
 }).then(function(){ // Navigation form
   let logFileComponents = logFile.split(' ')
   let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
