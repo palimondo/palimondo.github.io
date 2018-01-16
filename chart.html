@@ -298,38 +298,49 @@ function traceMeanArea(s) {
   return t
 }
 
+function currentlySelected(){
+  let elements = Array.from(document.getElementsByClassName('selected'))
+  let seriesClass = elements.filter(e => !classes(e).includes('all-series'))
+    .reduce((_, e) => getSeries(classes(e)), undefined)
+    // excludes the special case of 'all-series'
+  return {seriesClass, elements}
+}
+
 function selectSeries(s){
-  if (s && s.id) {
+  if (s && s.id) { // s is #series element
     $('series').className = `ct-label ${s.id}`
-    // FIXME Handle switching raw/clean series when a serie is selected
+
     plotVerticalHistogram().then(plotHistogram).then(plotLags)
       .then(wait).then(plotRuntimes).then(wait).then(plotScatterplot)
-  } else {
-    selected = Array.from(document.getElementsByClassName('selected'))
-    selected.forEach(deselect)
-    selected = selected.filter(e => !classes(e).includes('all-series'))
-    oldSeries = selected.reduce((_, e) => getSeries(classes(e)), undefined)
-    let chart = $('chart')
-    if (selected.length > 0){
-      Plotly.deleteTraces(chart, 0)} // remove mean area
-    // console.log(`select '${s}' and deselect '${oldSeries}'`)
-    if (s) { // if (s && !(s == oldSeries)) {
-      Array.from(document.getElementsByClassName(s)).forEach(select)
-      plotVerticalHistogram().then(plotHistogram).then(plotLags)
       .then(function(){
-        let opacity = Array(series.length).fill(oldSeries ? undefined : 0.1)
-        if (oldSeries) { opacity[seriesIndex(oldSeries)] = 0.1 }
-        opacity[seriesIndex(s)] = 0.6
-        Plotly.restyle(chart, {opacity: opacity})
-        Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
-      }).then(wait).then(plotRuntimes)
-    } else {
-      Array.from(document.getElementsByClassName('all-series')).forEach(select)
-      plotVerticalHistogram().then(plotHistogram).then(plotLags)
-      .then(function(){
-        Plotly.restyle(chart, {opacity: 0.5})
-      }).then(wait).then(plotRuntimes)
-    }
+        highlightTraces(currentlySelected().seriesClass)
+      })
+  } else { // s is seriesClass
+    let selected = currentlySelected()
+    selected.elements.forEach(deselect)
+    // console.log(`select '${s}' and deselect '${selected.seriesClass}'`)
+
+    Array.from(document.getElementsByClassName(s ? s : 'all-series'))
+      .forEach(select)
+
+    plotVerticalHistogram().then(plotHistogram).then(plotLags)
+    .then(highlightTraces(s, selected.seriesClass))
+    .then(wait).then(plotRuntimes)
+  }
+}
+
+function highlightTraces(s, oldSeries){ // param type: seriesClass
+  let opacity = Array(series.length).fill(
+    (!s) ? 0.5 : oldSeries ? undefined : 0.1)
+  if (oldSeries) {
+    opacity[seriesIndex(oldSeries)] = (!s) ? 0.5 : 0.1
+    Plotly.deleteTraces(chart, 0) // remove mean area
+  }
+  if (s) { opacity[seriesIndex(s)] = 0.6 }
+
+  Plotly.restyle(chart, {opacity: opacity})
+  if (s) {
+    Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
   }
 }
 
@@ -749,7 +760,6 @@ function plotRuntimes() {
   rt.marker.size = 5.0
   rt.cliponaxis = false
 
-  // FIXME add this to sparklines, too?
   // Mean area plot
   let t = traceRuntime(series)
   t.fill = 'toself'; t.mode = 'lines'; t.line = {width: 0}
@@ -768,7 +778,6 @@ function plotRuntimes() {
   layout.yaxis.range = [s.min - p, s.max + p]
   layout.xaxis.tickvals = raw ? [0, tifIndex - .5] : [0, ...quartileIndexes(s.n), (s.n - 1)]
   // FIXME labels for n = 2, 3, 4 (when 5 no. summary doesn't fit)
-  // XXX show values in chart instead of on yaxis
   layout.xaxis.ticktext = raw ? [0, tifIndex] : ['Min', 'Q1', 'Med', 'Q3', 'Max']
 
   let p2 = Math.pow(2, Math.ceil(Math.log2(s.n)))
@@ -1000,10 +1009,10 @@ fetch(logFile).then(function(response) {
   generateSeriesCSS()
   populateStatsTable()
 
-  // Compute startup overhead
+  // Compute setup overhead
   // iterations i = 1, j = 2
-  // s = (i * j (ti -tj)) / j - i
-  // startup_overhead = 2 (ti - tj)
+  // s = (i * j (ti -tj)) / (j - i)
+  // setup_overhead = 2 (ti - tj)
   iterations = series.groupBy('num_iters')
   const seriesMin = (series, stat) =>
     series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
@@ -1016,7 +1025,7 @@ fetch(logFile).then(function(response) {
     let ti = seriesMin(iterations[i], 'min')
     let tj = seriesMin(iterations[j], 'min')
     // let setup = 2*(ti-tj)
-    let setup = (i * j * (ti -tj)) / j - i
+    let setup = (i * j * (ti -tj)) / (j - i)
     let ratio = setup/ti
     if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
       let note = $('note')
@@ -1032,6 +1041,7 @@ fetch(logFile).then(function(response) {
   // console.log([tj, tk, 8*(tj-tk)/2]);
 
 })
+.then(generateNavigationForm)
 .then(plotVerticalHistogram)
 .then(plotBoxplot)
 .then(plotHistogram)
@@ -1042,7 +1052,10 @@ fetch(logFile).then(function(response) {
   wait(1).then(plotRuntimes)
   wait(10).then(plotScatterplot)
   sparklines.forEach(plot => wait(1000).then(plot))
-}).then(function(){ // Navigation form
+})
+
+
+function generateNavigationForm(){ // Navigation form
   let logFileComponents = logFile.split(' ')
   let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
 
@@ -1059,10 +1072,10 @@ fetch(logFile).then(function(response) {
       return o
     }
     benchmarks.forEach(t => benchmark.appendChild(option(t)))
-    $('benchmark').selectedIndex = benchmarks.findIndex(t => t == allSeries.name)
+    let benchmarkName = allSeries.name.split(' ')[0]
+    benchmark.selectedIndex = benchmarks.findIndex(t => t == benchmarkName)
   })
-})
-
+}
 
 /* TODO ?
  - add micro histograms to table
