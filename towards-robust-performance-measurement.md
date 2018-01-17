@@ -17,7 +17,7 @@ Compiled benchmark suite consist of 3 binary files, one for each tracked optimiz
 
 There are hundreds of microbenchmarks (471 at the time of this writing) that exercise small portions of the language or standard library. They can be executed individually by specifying their name or as a whole suite, usually as part of the pre-commit check done by CI bots using the `Benchmark_Driver`. 
 
-All benchmarks have main performance test function that was historically prefixed with `run_` and is now registered using `BenchmarkInfo` to be recognized by the test harness as part of the suite. The run method takes single `Int` parameter `N` representing number of iterations to perform. This is normally determined by the harness so that the benchmark runs for approximately 1 second per sample. It can also be set manually by passing `--num-iters` parameter to the `Benchmark_X` (or `-i` parameter to the `Benchmark_Driver`).
+All benchmarks have main performance test function that was historically prefixed with `run_` and is now registered using `BenchmarkInfo` to be recognized by the test harness as part of the suite. The run method takes single `Int` parameter `N` representing number of iterations to perform. This is normally determined by the harness so that the benchmark runs for approximately one second per sample. It can also be set manually by passing `--num-iters` parameter to the `Benchmark_X` (or `-i` parameter to the `Benchmark_Driver`).
 
 The execution of the benchmark for `N` iterations is then timed by the harness, which reports the measured time divided by `N`, making it the *average time per iteration*. This is one sample.
 
@@ -46,7 +46,7 @@ At that point I was visualizing the samples with graphs in Numbers, but it was v
 In the following I’ll be presenting sample visualizations and statistical graphics from [`chart.html`](https://github.com/palimondo/palimondo.github.io/blob/master/chart.html). You can click on the links to explore the raw and filtered data yourself in the web browser. Note that my measurements were performed on Late 2008 MacBook Pro with 2.4 GHz Intel Core 2 Duo CPU which is approximately an order of magnitude slower then the Mac Minis used to run benchmarks by CI bots. 
 
 ### Scaling within Brackets
-I have done several runs of the whole suite with different parameters for the `Benchmark_X`. First I have tried to partially approximate the automatic scaling of the benchmark to make it run for approximately 1 second like the test harness does in case the `--num-iters` parameter is not set (or set to 0), but with a twist:
+I have done several runs of the whole suite with different parameters for the `Benchmark_X`. First I have tried to partially approximate the automatic scaling of the benchmark to make it run for ~1s like the test harness does in case the `--num-iters` parameter is not set (or set to 0), but with a twist:
 
 * Collect 3 samples with `--num-iters=1` (empirically: 1st sample is very often an outlier, but by the 3rd sample it’s usually in the ballpark of true value)
 * Use the minimum runtime to compute number of iterations to make the performance test run for ~1s
@@ -54,13 +54,23 @@ I have done several runs of the whole suite with different parameters for the `B
 
 This results in effective run times around 1 second per benchmark, but the benchmarks are grouped into more stable bins that allow for easier comparison between runs. It eliminates one source of measurement noise caused by the auto-scaling of the benchmarks — varying number of iterations per sample that was causing unstable and non-deterministic memory consumption depending on how many other processes were interfering with the measurements.
 
-### Increased Measurement Frequency
-I’ve realized that it is possible to trade `num-iters` for `num-samples` while maintaining the same ~1 second run time, just increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration! Or anything in between. 
+### Increase Measurement Frequency
+It is possible to trade `num-iters` for `num-samples` — while maintaining the same ~1 second run time — effectively increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration! Or anything in between: 
 
-<iframe src="chart.html?f=Dictionary+ten.json" name="Dictionary+ten" frameborder="0" width="100%" height="350">
-[Dictionary+ten](chart.html?f=Dictionary+ten.json)</iframe>
+<iframe src="chart.html?f=ArrayLiteral+iters.json&hide=navigation+plots" name="ArrayLiteral+iters" frameborder="0" width="100%" height="640">
+[ArrayLiteral+iters](chart.html?f=ArrayLiteral+iters.json)</iframe>
 
-Having more samples allows us to use statistical methods to improve the quality of our measurements. Finer granularity sampling revealed two other source of instability.
+All the ten series in the chart above represent ~1s of timing benchmark `ArrayLiteral`, with varying number of iterations (denoted by `i#` in the series’ name). This results in progressively less samples (`n` in the table) as the number of iterations averaged in the reported time increases.
+
+With the decrease of iterations averaged in each sample, their variability rises. This is probably the reason for introducing the averaging over multiple iterations in the first place. These high values are errors caused by preemptive multitasking. When the operating system’s scheduler interrupts our process in the middle of measurement, the reported sample time additionally also includes the time it took to switch context to another process, its execution during the allotted time slice and switching back. The frequency and magnitude of these errors varies depending on the overall system load. 
+
+Our current measurement system with auto-scaling therefore always reports the time with cumulative error of all the interrupts that have occurred during the ~1s of measurement. This is the root cause of instability in the reported benchmark improvements and regressions. Our measurement process is fragile — easily susceptible to the whims of varying system load. We attempt to counteract it with brute force, looking for the lowest measured sample gathered in about 20 seconds. We are looking for an outlier: a minimum. It is not a typical value!
+
+With having just 20 samples overall, we have little indication of their quality. They are too coarse. We don’t really know how representative they are. 
+
+Having more samples allows us to use statistical methods to improve the quality of our measurements. 
+
+Finer granularity sampling revealed two other source of instability.
 
 TK setup work, context switching
 
