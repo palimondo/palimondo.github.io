@@ -66,8 +66,10 @@
       .navigation h1 {display: inline;}
 
       .hide {display: none !important; flex-basis: 0% !important}
-      .navigation.hide {display: block !important}
+      .hide.navigation {display: block !important}
       .hide > button, .hide > select { display: none !important }
+      .hide.stats {display: table-row-group !important}
+      .hide.stats tr:not(.selected) {display: none}
 
       h2 {margin-top: 0; font-size: 100%}
 
@@ -131,7 +133,7 @@
             <thead>
               <tr id="titles"></tr>
             </thead>
-            <tbody id="stats">
+            <tbody id="stats" class="stats">
             </tbody>
           </table>
           <!-- <div class="ct-chart ct-square sparkline" id="sparkline"></div> -->
@@ -173,8 +175,7 @@ const deselect = (e) => removeClass(e, 'selected')
 const classes = e => e.getAttribute('class')
 
 // Series helpers
-const seriesClassPrefix = 'ct-series-'
-const seriesClassSuffixes = 'abcdefghijklmnoabcdefghijk'.split('')
+const seriesClassPrefix = 'series-'
 const isSeries = c => c.startsWith(seriesClassPrefix)
 const hasSeries = cs => cs.includes(seriesClassPrefix)
 const getSeries = cs => cs.split(' ').find(isSeries)
@@ -187,13 +188,18 @@ function findSeries(e) {
   }
 }
 const seriesIsRaw = _ => $('series').className.endsWith('raw')
+const elapsedTime = s => s.rawStats.sum * s.num_iters
+const roundRange = r => r > 500 ? round(r) : round(r, 1)
 
 // Math helpers
+const max = (a, b) => Math.max(a, b)
+const min = (a, b) => Math.min(a, b)
+const log2N = n => Math.max(1, Math.ceil(Math.log2(n)))
+
 function round(x, precision = 0) {
   let factor = Math.pow(10, precision);
   return Math.round(x * factor) / factor;
 }
-const log2N = n => Math.max(1, Math.ceil(Math.log2(n)))
 
 // Prelude helpers
 const zip = rows=>rows[0].map((_,c)=>rows.map(row=>row[c]))
@@ -328,6 +334,7 @@ function selectSeries(s){
 
     Array.from(document.getElementsByClassName(s ? s : 'all-series'))
       .forEach(select)
+    updateParam('s', s ? s.substring(seriesClassPrefix.length) : null)
 
     plotVerticalHistogram().then(plotHistogram).then(plotLags)
     .then(highlightTraces(s, selected.seriesClass))
@@ -488,8 +495,42 @@ function populateStatsTable() {
   rows.forEach(tr => tr.onclick = ev => selectSeries(findSeries(ev.target)))
   rows.reverse().forEach(tr => statsTable.appendChild(tr))
 
-  // FIXME selection of specified series or all-series otherwise
-  Array.from(document.getElementsByClassName('all-series')).forEach(select)
+  var s = getParam('s', null) // selected series
+  s = s ? (seriesClassPrefix + s) : 'all-series'
+  Array.from(document.getElementsByClassName(s)).forEach(select)
+}
+
+function computeSetupOverhead() {
+  // Compute setup overhead
+  // iterations i = 1, j = 2
+  // s = (i * j (ti -tj)) / (j - i)
+  // setup_overhead = 2 (ti - tj)
+  iterations = series.groupBy('num_iters')
+  const seriesMin = (series, stat) =>
+    series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
+
+  is = Object.keys(iterations).sort(ascending)
+
+  if (is.length > 1) {
+    let i = is[0]
+    let j = is[1]
+    let ti = seriesMin(iterations[i], 'min')
+    let tj = seriesMin(iterations[j], 'min')
+    // let setup = 2*(ti-tj)
+    let setup = (i * j * (ti -tj)) / (j - i)
+    let ratio = setup/ti
+    if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
+      let note = $('note')
+      note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+    }
+    console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
+  }
+
+  // let ti = seriesAverage(iterations[1], 'q1')
+  // let tj = seriesAverage(iterations[2], 'q1')
+  // console.log([ti, tj, 2*(ti-tj)]);
+  // let tk = seriesAverageMinimum(iterations[4])
+  // console.log([tj, tk, 8*(tj-tk)/2]);
 }
 
 // Traces
@@ -551,10 +592,9 @@ function axisFormat() {
 function layoutAxis() {
   let f = axisFormat()
   f.yaxis.zeroline = true
-  p = allSeries.cleanStats.range * 0.01
-  f.yaxis.range = [allSeries.cleanStats.min - p, allSeries.cleanStats.max + p],
-  f.xaxis.range = [0, Math.max(...series.map(s => s.rawStats.sum * s.num_iters))]
-  f.margin.l = 2 + (''+allSeries.cleanStats.max).length * 7 // label length
+  f.yaxis.range = defaultRange('y')
+  f.xaxis.range = defaultRange('x')
+  f.margin.l = 2 + (' '+allSeries.cleanStats.max).length * 7 // label length
   return f
 }
 
@@ -600,11 +640,22 @@ function resizeMainCharts() {
 }());
 
 function resetZoom() {
-  Plotly.relayout($('chart'), layoutAxis(), true)
+  let l = layoutAxis()
+  l.yaxis.range = allSeries.homeRange.y.slice()
+  l.xaxis.range = allSeries.homeRange.x.slice()
+  Plotly.relayout(chart, l, true)
 }
 
 function zoomAutoscale() {
-  Plotly.relayout($('chart'), 'yaxis.autorange', true)
+  Plotly.relayout(chart, {
+    'xaxis.range': allSeries.homeRange.x.slice(),
+    'yaxis.autorange': true
+  }, true)
+}
+
+function defaultRange(axis) {
+  let r = getParam('r' + axis, null)
+  return r ? r.split(' ').map(parseFloat) : allSeries.homeRange[axis].slice()
 }
 
 function updateYRange(plot, range) {
@@ -616,9 +667,15 @@ function updateYRange(plot, range) {
 }
 
 function synchronizeZoom() {
-  let chartRange = chart.layout.yaxis.range.slice()
+  let rx = chart.layout.xaxis.range.map(roundRange)
+  updateParam('rx',
+    isEqual(rx, allSeries.homeRange.x) ? null : rx[0] + ' ' + rx[1])
+  let ry = chart.layout.yaxis.range.map(roundRange)
+  updateParam('ry',
+    isEqual(ry, allSeries.homeRange.y) ? null : ry[0] + ' ' + ry[1])
+
   let plots = ['boxplot', 'vertical-histogram']
-  plots.forEach(p => updateYRange($(p), chartRange.slice()))
+  plots.forEach(p => updateYRange($(p), ry))
 }
 
 function selectedSeries() {
@@ -660,7 +717,6 @@ function computeStats(a) { // assumes `a` is sorted ascending
     sum: a.reduce(sum),
   }
 }
-
 
 // Sparkline layout
 const padedRangeForSparkline = ([s, e]) => {
@@ -920,9 +976,8 @@ function plotScatterplot() {
 }
 
 function layoutSansAxis() {
-  p = allSeries.cleanStats.range * 0.01
   let f = axisFormat()
-  f.yaxis.range = [allSeries.cleanStats.min - p, allSeries.cleanStats.max + p]
+  f.yaxis.range = defaultRange('y')
   f.yaxis.zeroline = true
   f.yaxis.showgrid = true
   f.yaxis.showticklabels = false
@@ -963,7 +1018,7 @@ function updateParam(name, value) {
 }
 
 // Hide parts specified in URL parameters
-getParam('hide').split(',').filter(s => s.length > 0).forEach(c =>
+getParam('hide').split(' ').filter(s => s.length > 0).forEach(c =>
   Plotly.d3.select(`.${c}`).classed('hide', true)
 )
 
@@ -980,8 +1035,6 @@ fetch(logFile).then(function(response) {
   document.title = data.name;
 
   const _2k = 2048
-  const max = (a, b) => Math.max(a, b)
-  const min = (a, b) => Math.min(a, b)
 
   let maxSeriesLength = data.series.map(s => s.data.length).reduce(max)
   if (maxSeriesLength > _2k) {
@@ -1010,6 +1063,7 @@ fetch(logFile).then(function(response) {
     s.rawStats = computeStats(s.runtimes)
     s.cutoff = s.rawStats.tif
     s.cleanStats = computeStats(cleanRuntimes(s)) // must be after cutoff is set
+    s.seriesClass = seriesClassPrefix + s.name.split(' ')[1]
   })
   allSeries.runtimes.sort(ascending)
   allSeries.rawStats = computeStats(allSeries.runtimes)
@@ -1017,44 +1071,16 @@ fetch(logFile).then(function(response) {
   allSeries.cutoff = allSeries.cleanStats.max
   allSeries.seriesClass = 'all-series'
   allSeries.name += ' all'
-
-  zip([series, seriesClassSuffixes]).forEach(
-    ([s, scs]) => s['seriesClass'] = seriesClassPrefix + scs)
+  let p = round(allSeries.cleanStats.range * 0.01, 1)
+  allSeries.homeRange = {
+    y: [allSeries.cleanStats.min - p,
+        allSeries.cleanStats.max + p].map(roundRange),
+    x: [0, Math.max(...series.map(elapsedTime))]
+  }
 
   generateSeriesCSS()
   populateStatsTable()
-
-  // Compute setup overhead
-  // iterations i = 1, j = 2
-  // s = (i * j (ti -tj)) / (j - i)
-  // setup_overhead = 2 (ti - tj)
-  iterations = series.groupBy('num_iters')
-  const seriesMin = (series, stat) =>
-    series.map(s => s.rawStats[stat]).reduce(min, Number.MAX_SAFE_INTEGER)
-
-  is = Object.keys(iterations).sort(ascending)
-
-  if (is.length > 1) {
-    let i = is[0]
-    let j = is[1]
-    let ti = seriesMin(iterations[i], 'min')
-    let tj = seriesMin(iterations[j], 'min')
-    // let setup = 2*(ti-tj)
-    let setup = (i * j * (ti -tj)) / (j - i)
-    let ratio = setup/ti
-    if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
-      let note = $('note')
-      note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
-    }
-    console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
-  }
-
-  // let ti = seriesAverage(iterations[1], 'q1')
-  // let tj = seriesAverage(iterations[2], 'q1')
-  // console.log([ti, tj, 2*(ti-tj)]);
-  // let tk = seriesAverageMinimum(iterations[4])
-  // console.log([tj, tk, 8*(tj-tk)/2]);
-
+  computeSetupOverhead()
 })
 .then(generateNavigationForm)
 .then(plotVerticalHistogram)
@@ -1065,7 +1091,9 @@ fetch(logFile).then(function(response) {
   // These charts take longer to plot, delay them a bit, so that
   // faster charts above are displayed as soon as possible
   wait(1).then(plotRuntimes)
-  wait(10).then(plotScatterplot)
+  wait(10).then(plotScatterplot).then(function(){
+    highlightTraces(currentlySelected().seriesClass)
+  })
   sparklines.forEach(plot => wait(1000).then(plot))
 })
 
