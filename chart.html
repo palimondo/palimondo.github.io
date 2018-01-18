@@ -35,15 +35,21 @@
       tbody tr:hover {background-color: Highlight; }
       td {cursor: pointer;}
       .ct-point {stroke-width: 5px; stroke-linecap: round}
-      h1 {font-size: 1.5rem}
-      h2 {font-size: 1.1rem}
 
-      .series h2 {float:left; margin-right: .5rem;}
-      .series form {clear: none; color: black; font-size: 0.75rem; margin-top: 0.1rem;}
-      #note {display: inline; margin-left: .8em;}
+      h1 {font-size: 1.5rem}
+      h2 {font-size: 1.1rem; margin-top: 0;}
+
+      body.embedded {margin: 0}
+      .embedded h1 {font-size: 1.1rem;}
+      .embedded h2 {font-size: 1rem; font-weight: 600}
+      .embedded #series.ct-label {font-size: .75rem;}
+
+      .caption {display: flex; flex-flow: row wrap;}
+      .caption > * {margin: auto 0; flex: 0 0 auto;}
+      .series form {color: black; font-size: 0.75rem;
+        margin: auto .8em auto .5em;}
 
       table, table.raw, table.clean {caption-side: top !important;}
-      caption {text-align: left}
 
       #stats {text-align: right;}
       .sparkline {/*background-color: #fafafa66;*/ width: 1rem; height: 1rem;}
@@ -51,7 +57,7 @@
       .raw .clean, .clean .raw {display: none}
       #sparkline {border: 1px solid red; display: none;}
       table { border-collapse:collapse; border-spacing:0;}
-      td {padding: 0 .2rem}
+      td {padding: 0.1em .333em}
 
       body > div, aside {display: flex}
       body {display: flex; flex-flow: column}
@@ -71,8 +77,6 @@
       .hide.stats {display: table-row-group !important}
       .hide.stats tr:not(.selected) {display: none}
 
-      h2 {margin-top: 0; font-size: 100%}
-
       #chart {flex: 1 1 50%}
       aside {flex: 1 1 50%}
       aside { display: flex; flex-flow: row wrap; order: 2;
@@ -85,20 +89,23 @@
 
       td > div.pair, th > div.pair {display: none}
       @media only screen and (max-width: 580px)  {
+        .ct-major-tenth:before { padding-bottom: 80%}
+        #boxplot, #vertical-histogram {width: 10rem; flex: 0 0 12%}
         td > div.pair, th > div.pair {display: block}
         td > div:not(.pair), th > div:not(.pair) {display: none}
         tr > td:first-of-type > div:not(.pair) {display: block} /* Runtimes exception*/
         td {padding: 0}
-        td > div {padding: 0 0.2rem }
-        .ct-major-tenth:before { padding-bottom: 80%}
-        #boxplot, #vertical-histogram {width: 10rem; flex: 0 0 12%}
-        .selected td:nth-child(n+11):nth-child(-n+16) {background: none}
+        td > div {padding: 0.1em 0.333em }
+        td:nth-child(n+10):nth-child(-n+16) {display: none}
         .selected td:nth-child(n+6):nth-child(-n+8) {
           background: linear-gradient(to bottom, Highlight 0%, Highlight 10%,
             white 10%, white 90%, rgba(0,0,0,0) 90%, rgba(0,0,0,0) 100%)
         }
         .selected td:nth-child(n+7):nth-child(-n+7) .pair div:first-child {
           font-weight: bolder}
+      }
+      @media only screen and (max-width: 380px)  {
+        .embedded #series.ct-label {font-size: .6rem;}
       }
 
     </style>
@@ -121,14 +128,16 @@
         <div class='series'>
           <table id="series" class="ct-label">
             <caption>
-              <h2>Series</h2>
-              <form class="ct-label">
-                <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
-                <label for="raw">Raw</label>
-                <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
-                <label for="clean">Exclude Outliers</label>
+              <div class='caption'>
+                <h2>Series</h2>
+                <form class="ct-label">
+                  <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
+                  <label for="raw">Raw</label>
+                  <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
+                  <label for="clean">Exclude Outliers</label>
+                </form>
                 <p id='note'></p>
-              </form>
+              </div>
             </caption>
             <thead>
               <tr id="titles"></tr>
@@ -1021,6 +1030,9 @@ function updateParam(name, value) {
 getParam('hide').split(' ').filter(s => s.length > 0).forEach(c =>
   Plotly.d3.select(`.${c}`).classed('hide', true)
 )
+if (getParam('hide', null)) { // inferring embedding context
+  Plotly.d3.select('body').classed('embedded', true)
+}
 
 let outliers = getParam('outliers', 'raw')
 setClass($('series'), outliers)
