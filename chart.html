@@ -164,9 +164,9 @@
       </div>
     </aside>
     <div class="main">
-      <div id="boxplot"></div>
+      <div id="boxplot" class="sideplot"></div>
       <div class="ct-chart ct-major-tenth" id="chart"></div>
-      <div id="vertical-histogram"></div>
+      <div id="vertical-histogram" class="sideplot"></div>
     </div>
 <script>
 
@@ -352,18 +352,31 @@ function selectSeries(s){
 }
 
 function highlightTraces(s, oldSeries){ // param type: seriesClass
+  const extras = [-1, -2, -3, -4]
   let opacity = Array(series.length).fill(
     (!s) ? 0.5 : oldSeries ? undefined : 0.1)
+
+  if (chart.data.length > series.length) {
+    Plotly.deleteTraces(chart, extras)
+  }
   if (oldSeries) {
     opacity[seriesIndex(oldSeries)] = (!s) ? 0.5 : 0.1
-    Plotly.deleteTraces(chart, 0) // remove mean area
+    Plotly.moveTraces(chart, -1, seriesIndex(oldSeries)) // move back
   }
   if (s) { opacity[seriesIndex(s)] = 0.8 }
 
   Plotly.restyle(chart, {opacity: opacity})
+
   if (s) {
-    Plotly.addTraces(chart, traceMeanArea(series[seriesIndex(s)]), 0)
+    Plotly.moveTraces(chart, seriesIndex(s), -1) // move to top
   }
+  let _s = s ? series[seriesIndex(s)] : allSeries
+  Plotly.addTraces(chart, [
+    s ? traceMeanArea(_s) : traceLine(_s, 'mean', 'dash'),
+    traceLine(_s, 'median'),
+    traceLine(_s, 'q1', 'dot'),
+    traceLine(_s, 'q3', 'dot'),
+  ], extras)
 }
 
 document.onkeydown = selectSeriesWithKeyboard;
@@ -526,11 +539,12 @@ function computeSetupOverhead() {
     let ti = seriesMin(iterations[i], 'min')
     let tj = seriesMin(iterations[j], 'min')
     // let setup = 2*(ti-tj)
-    let setup = (i * j * (ti -tj)) / (j - i)
+    let setup = (i * j * (ti - tj)) / (j - i)
     let ratio = setup/ti
     if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
       let note = $('note')
       note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+      allSeries.setup_overhead = setup
     }
     console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
   }
@@ -556,21 +570,74 @@ function traceRuntime(s, opacity=0.5) {
   }
 }
 
-function traceScatterPlot(s) {
-  let isRaw = seriesIsRaw()
-  // TODO subtract setup overhead here during filtering
-  let filtered = s => s.data.map(
-    runtime => ((isRaw || runtime <= s.cutoff) ? runtime : null ))
+const runningTime = (timestamps, num_iters) =>
+  // timestamps.reduce((a, x, i) => [...a, x * s.num_iters + (a[i-1] || 0)], [])
+  timestamps.reduce((a, x, i) => {
+      a[i] = (x * num_iters + (a[i-1] || 0)); return a
+    }, Array(timestamps.length))
+
+const movingWindowAvg = (a, step) => a.map(function(_, i) {
+    if (i - step < 0) return null
+    var wnd = a.slice(i - step, i + step + 1)
+    var result = Plotly.d3.sum(wnd) / wnd.length
+    if (isNaN(result)) { result = _; }
+    return result
+  })
+
+function movingAverage(x, y, steps) {
+  const notNull = n => n != undefined
+  x = x.slice()
+  y.forEach((v, i) => { if (!v) x[i] = v }) // null timestamps, too
   return {
-    x: s.data.reduce((a, x, i) => [...a, x * s.num_iters + (a[i-1] || 0)], []),
-    y: filtered(s),
+    x: x.filter(notNull),
+    y: movingWindowAvg(y.filter(notNull), steps)
+  }
+}
+
+function traceScatterPlot(s) {
+  // TODO subtract setup overhead here during filtering
+  const cutoff = s.cutoff
+  // const o = allSeries.setup_overhead ?
+  //   round(allSeries.setup_overhead / s.num_iters) : 0
+  let filtered = s => seriesIsRaw() ? s.data.slice() :
+    s.data.map(r => (r <= cutoff) ? r : null)
+    // s.data.map(r => (r <= cutoff) ? r - o : null)
+
+  let data = {x: runningTime(s.data, s.num_iters), y: filtered(s)}
+  let {x, y} = data
+  // let {x, y} = movingAverage(data.x, data.y, round(20000/s.rawStats.min))
+
+  // XXX
+  let t = {
+    x: x,
+    y: y,
     name: nameOf(s),
     type: 'scatter',
     // type: 'scattergl',
+    // mode: 'lines',
     mode: 'lines+markers',
     connectgaps: true, opacity: 0.5, cliponaxis: false,
     marker: { color: colorForSeries(s), size: 5,},
     line : { color: rbgaForSeries(s), width: strokeWidth(log2N(s.data.length))}
+    // line : { color: rbgaForSeries(s), }
+  }
+  return t
+}
+
+// var t0 = performance.now();
+// var t1 = performance.now();
+// console.log("computed XXX " + round(t1 - t0, 1) + " ms");
+
+function traceLine(s, stat, dash) {
+  let y = (seriesIsRaw() ? s.rawStats : s.cleanStats)[stat]
+  return {
+    x: allSeries.homeRange.x,
+    y: [y, y],
+    name: nameOf(s) + ' ' + stat[0].toUpperCase() + stat.slice(1),
+    type: 'scatter',
+    mode: 'lines',
+    connectgaps: true, opacity: 1, cliponaxis: false,
+    line : { color: colorForSeries(s), width: .75, dash}
   }
 }
 
@@ -1028,7 +1095,7 @@ function updateParam(name, value) {
 
 // Hide parts specified in URL parameters
 getParam('hide').split(' ').filter(s => s.length > 0).forEach(c =>
-  Plotly.d3.select(`.${c}`).classed('hide', true)
+  Plotly.d3.selectAll(`.${c}`).classed('hide', true)
 )
 if (getParam('hide', null)) { // inferring embedding context
   Plotly.d3.select('body').classed('embedded', true)
