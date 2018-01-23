@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!--
+TODO
+ links to chart.html?f=XXX
+ sorting
+ boxplot
+ FIXME sum of all samples is strange for n = 4096
+ -->
+<html>
+  <head>
+    <title>Benchmarks</title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- <script type="text/javascript" src="http://d3js.org/d3.v3.min.js"></script> -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+      body {font-family: system-ui, -apple-system;}
+      a {text-decoration: none;}
+      td a {display: block; width: 100%}
+      table {font-variant-numeric: tabular-nums;
+        border-collapse:collapse; border-spacing:0;
+        text-align: right; font-size: .6rem;  color: rgba(0, 0, 0, .4);
+      }
+      td {padding: 0.1em .333em; vertical-align: bottom;}
+      th:first-child {text-align: left;}
+      td:first-child {max-width: 24em; text-align: left;}
+      .spacer {max-width: 24em; margin: -1.2em 0 0 0; color: orange;
+        visibility: hidden;
+        white-space: pre-wrap; word-wrap: break-word;}
+      tbody tr:hover {background-color: Highlight; }
+      tr {border-bottom: 1px solid rgba(0,0,0, .1)}
+      .raw .clean, .clean .raw {display: none}
+      .caption {display: flex; flex-flow: row wrap; color: black; }
+      .caption > * {margin: auto 0; flex: 0 0 auto;}
+      .caption form {font-size: 0.75rem;
+        margin: auto .8em auto 1em;}
+
+      .ascending {
+        background: linear-gradient(to top, Highlight 0%, white 100%)}
+      .descending {
+        background: linear-gradient(to bottom, Highlight 0%, white 100%)}
+
+    </style>
+    <meta name="viewport" content="initial-scale=1.0">
+    <script>
+      const $ = id => document.getElementById(id)
+      d3 = Plotly.d3
+    </script>
+  </head>
+  <body>
+        <div class='benchmarks, ct-label'>
+          <table id="benchmarks" class="raw">
+            <caption>
+              <div class='caption'>
+                <h1 id='title'>Series</h1>
+                <form class="ct-label">
+                  <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
+                  <label for="raw">Raw</label>
+                  <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
+                  <label for="clean">Exclude Outliers</label>
+                </form>
+                <p id='note'></p>
+              </div>
+            </caption>
+            <thead>
+              <tr id="titles"></tr>
+            </thead>
+            <tbody id="stats" class="stats">
+            </tbody>
+          </table>
+        </div>
+<script>
+
+function round(x, precision = 0) {
+  let factor = Math.pow(10, precision);
+  return Math.round(x * factor) / factor;
+}
+
+function getParam(name, defaultValue='') {
+  let value = (new URLSearchParams(location.search)).get(name)
+  return value ? value : defaultValue
+}
+
+function updateParam(name, value) {
+  let params = new URLSearchParams(location.search)
+  if (value) { params.set(name, value) }
+  else { params.delete(name) }
+  window.history.replaceState({}, '', `${location.pathname}?${params}`)
+}
+
+function selectSeries(s){
+    benchmarks.className = s.id
+}
+
+const zip = rows=>rows[0].map((_,c)=>rows.map(row=>row[c]))
+const enumerate = a => zip([[...a.keys()], a])
+
+const seriesColumns = [ // [tooltip (title), th label]
+  ['Runtimes', ''], ['Series', ''], ['Legend', ''], ['Number of Samples', 'n'],
+  ['Minimum', 'Min'], ['Maximum', 'Max'],
+  ['Range', 'R'], ['Percent Relative Range', 'R%'],
+  ['1st Quartile', 'Q1'], ['3rd Quartile', 'Q3'],
+  ['Interquartile Range', 'IQR'], ['Percent Relative Interquartile Range', '%'],
+  ['Median', 'Med'], ['Mean', 'x̅'],
+  ['Strandard Deviation', 's'], ['Coeficient of Variation', 'CV'],
+  // ['Top Inner Fence (Q3 + 1.5*IQR)', 'TIF'],
+  ['Involuntary Context Switches', 'ICS'],
+  ['Voluntary Context Switches', 'VCS'],
+]
+
+const columns = [
+  ['Benchmark', 'Benchmark'], ['Setup Overhead', 'SO'],
+  ['Number of Samples per Series','n'], ['Total Number of Samples','∑n'],
+  ...seriesColumns.slice(4)]
+
+const seriesKeys = ['name', 'count', 'min', 'max', 'range', 'rrange',
+  'q1', 'q3', 'irq', 'riqr', 'median', 'mean', 'sd', 'cv',
+  'ics', 'vcs', 'max_rss', 'outliers']
+  .reduce((m, k, v) => {m[k] = v; return m}, {})
+
+const Stats = (s) => new Proxy(s, {
+  get: function(obj, prop) {
+    return obj[prop] || s[seriesKeys[prop]]
+  }})
+
+const columnIndex = enumerate(columns)
+
+const v = (benchmark, column) =>
+  benchmark[benchmarks.className + column[1]]
+
+let benchmarks = $('benchmarks')
+const seriesIsRaw = _ => benchmarks.className === 'raw'
+
+let variant = getParam('variant', 'ten')
+$('title').innerHTML = `'${variant}' Series`
+var statsFile = `benchmarks ${variant}.json`
+fetch(statsFile).then(function(response) {
+  return response.json();
+}).then(function(benchmarks) {
+
+  benchmarks.forEach(b => {
+    b.rawStats = b.rawStats.map(Stats)
+    b.cleanStats = b.cleanStats.map(Stats)
+  })
+
+  d3.select('#titles').selectAll('th')
+		  .data(columns).enter()
+		  .append('th')
+        .attr('title', ([title, _]) => title)
+		    .text(([_, label]) => label)
+        .on('click', function(d) {
+          const sortingClass = (order) => order ? 'ascending' : 'descending'
+          const sortingOrder = (sorted) => sorted.classed('ascending')
+
+          let oldSorted =
+            d3.select('#benchmarks').select("th.ascending,th.descending")
+          let newSorted = d3.select(this)
+
+          var order = sortingOrder(oldSorted)
+          oldSorted.classed(sortingClass(order), false) // remove old
+
+          if (oldSorted[0][0] === newSorted[0][0]) order = !order
+          newSorted.classed(sortingClass(order), true) // set new
+
+          let rs = seriesIsRaw() ? rawRows : cleanRows
+          if (order) {
+            rs.sort((a, b) => v(a, d) > v(b, d))
+            // rs.sort((a, b) => d3.ascending(v(a, d), v(b, d)))
+          } else {
+            rs.sort((a, b) => v(a, d) < v(b, d))
+            // rs.sort((a, b) => d3.descending(v(a, d), v(b, d)))
+          }
+      })
+
+  d3.select('#titles')
+    .select('th:first-child').classed('ascending', true)
+
+  let rows = d3.select('#stats').selectAll('tr').data(benchmarks).enter()
+  let rawRows = rows.append('tr').classed('raw', true)
+  let cleanRows = rows.insert('tr').classed('clean', true)
+
+  function overhead(benchmark) {
+    iqr = benchmark.cleanStats.iqr
+    // iqr = benchmark['cleanStats'][9]
+    if (!benchmark.setup_overhead) return [0,0]
+    let [setup, ratio] = benchmark.setup_overhead
+    return (ratio > 0.05 || iqr < setup) ? benchmark.setup_overhead : [0,0]
+  }
+
+  const cellsForBenchmark = (stats) => (benchmark) => {
+    // let s = benchmark[stats].find(s => s[0] === 'all')
+    let s = benchmark[stats].find(s => s.name === 'all')
+    if (!s) { s = Array(seriesColumns.length - 2); s.fill('')} // 🖕 TypeFlood !
+    let values = [benchmark.name, overhead(benchmark),
+      benchmark.num_samples, ...s.slice(1)]
+    // let values = [benchmark.name, ...s.slice(0)]
+    // let values = [benchmark.name, benchmark.num_samples]
+    let c = zip([columns, values])
+    prefix = stats === 'rawStats' ? 'raw' : 'clean'
+    c.forEach( // cache values for quick sorting
+      ([[title, label], value]) => {
+        benchmark[prefix + label] =
+        (label === 'Benchmark') ? value :
+        (label === 'SO' && value) ? value[1] :
+        parseInt(value)
+      })
+    return c
+    // return values
+  }
+
+  const cells = (rows, stats) => rows.selectAll('td')
+	  .data(cellsForBenchmark(stats)).enter()
+	  .append('td')
+      .each(function ([[title, label], value], i) {
+        let td = d3.select(this)
+        td.attr('title', title)
+        if (i === 0) { // first cell
+          td.append('a')
+            .attr('target', 'there')
+            .attr('href', `chart.html?f=${value} ${variant}.json`)
+            .text(value)
+          td.append('div').attr('class', 'spacer').text(value)
+        } else if (i === 1) { // setup overhead, 2nd cell
+          if (value && value[0] !== 0) {
+            [setup, ratio] = value
+            td.text(`${setup}µs (${round(ratio*100, 1)}%)`)
+          }
+        } else {
+          td.text(value)
+        }
+      })
+	    // .text((value) => value)
+
+  cells(rawRows, 'rawStats')
+  cells(cleanRows, 'cleanStats')
+})
+
+</script>
+  </body>
+</html>
