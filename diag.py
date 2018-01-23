@@ -1,3 +1,5 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 import json
 import subprocess
 import gc
@@ -5,6 +7,7 @@ import gc
 from math import log
 from Benchmark_Driver import BenchmarkDriver
 from compare_perf_tests import PerformanceTestSamples
+from compare_perf_tests import PerformanceTestResult
 from compare_perf_tests import Sample
 
 class ArgsStub(object):
@@ -147,7 +150,7 @@ def i0(t):
 def sq(t):  # status quo
     run(t, s=1)  # don't need calibration, but need dummy result for merging samples
     for suffix in ['a', 'b', 'c', 'd']:
-        for i in range(0,20):
+        for i in range(0, 20):
             res = run(t, 1, 0, True)
             run_name = res.name + ' i0_' + suffix
             if run_name not in driver.results:
@@ -163,7 +166,7 @@ def sq(t):  # status quo
     # open_chart_in_safari()
 
 def cal(s, e):
-    for t in range(s,e):
+    for t in range(s, e):
         r = run(t)
         yield (t, adjusted_1s_samples(r.min))
 
@@ -172,18 +175,40 @@ def cal(s, e):
 def save_samples(test, file_name='f.json'):
     with open(file_name, 'w') as f:
         json.dump(series_data(test), f,
-                  separators=(',',':'))  # compact seriaization
+                  separators=(',', ':'))  # compact seriaization
 #    open_chart_in_safari(file_name)
+
+def load_samples(file_name):
+    with open(file_name, 'r') as f:
+        samples = json.load(f)
+    return [load_series(s) for s in samples['series']]
+
+def load_series(s):
+    num_iters = s['num_iters']
+    ss = PerformanceTestSamples(
+        s['name'], [Sample(i, num_iters, runtime)
+                    for (i, runtime) in enumerate(s['data'])])
+    r = PerformanceTestResult([0, s['name'], ss.count, ss.min, ss.max,
+                               ss.mean, ss.sd, ss.median])
+    r.samples = ss
+
+    def _set(key):
+        if key in s:
+            setattr(r, key, s[key])
+
+    map(_set, ['max_rss', 'involuntary_cs', 'voluntary_cs'])
+    return r
+
 
 def save_benchmarks(file_name='benchmarks.json'):
     with open(file_name, 'w') as f:
         json.dump(driver.all_tests, f,
-                  separators=(',',':'))
+                  separators=(',', ':'))
 
 def chart_url(series_file_name):
     import urlparse, urllib, os
     chart = urlparse.urljoin(
-      'file:', urllib.pathname2url(os.path.abspath('chart.html')))
+        'file:', urllib.pathname2url(os.path.abspath('chart.html')))
     url_parts = list(urlparse.urlparse(chart))
     url_parts[4] = urllib.urlencode({'f': series_file_name})
     return urlparse.urlunparse(url_parts)
@@ -221,6 +246,74 @@ def save_parsed_samples():
         file_name = data['name'] + ' i0_.json'
         with open(file_name, 'w') as f:
             json.dump(data, f, separators=(',',':'))
+
+def setup_overhead(results):
+    mins = sorted([(num_iters(r), r.samples.min) for r in results])
+    (i, ti) = map(float, mins[0])
+    try:
+        (j, tj) = map(float, next(m for m in mins if m[0] > i))  # next higher num_iters
+        setup = (i * j * (ti - tj)) / (j - i)
+        ratio = setup / ti
+        return (setup, ratio)
+    except StopIteration:
+        return None
+
+def test_stats(t, variant):
+    t = t if isinstance(t, str) else driver.all_tests[(t - 1)]
+    file_name = t + ' ' + variant + '.json'
+    results = load_samples(file_name)
+    stats = {'name': t, 'variant': variant,
+             'num_samples': max(map(lambda r: r.samples.count, results)),
+             'setup_overhead': setup_overhead(results),
+             'rawStats' : [format_stats(s) for s in results]}
+    stats['rawStats'].append(format_stats(all_stats(results)))
+    for s in results:
+        s.samples.exclude_outliers(top_only=True)
+    stats['cleanStats'] = [format_stats(s) for s in results]
+    stats['cleanStats'].append(format_stats(all_stats(results)))
+    print t
+    return stats
+
+def all_stats(results):
+    name = results[0].name.split()[0] + ' all'
+    ics, vcs = 0, 0
+    s = PerformanceTestSamples(name)
+    for series in results:
+        map(s.add, series.samples.samples)
+        ics += series.involuntary_cs
+        vcs += series.voluntary_cs
+    _all = PerformanceTestResult(
+        [0, name, s.num_samples, s.min, s.max,
+         int(s.mean), int(s.sd), s.median])
+    _all.samples = s
+    _all.involuntary_cs = ics
+    _all.voluntary_cs = vcs
+
+    return _all
+
+def format_stats(result):
+    s, M = result.samples, result.samples.mean
+    def pom(r):
+        return str(int(round((r / M * 100)))) + '%'  # percent of mean
+    def i(num):
+        return int(round(num))
+
+    stats = [
+        result.name.split()[-1],
+        s.count, s.min, s.max, s.range, pom(s.range), s.q1, s.q3,
+        s.iqr, pom(s.iqr), s.median, i(s.mean), i(s.sd), pom(s.sd),
+        result.involuntary_cs if hasattr(result, 'involuntary_cs') else None,
+        result.voluntary_cs if hasattr(result, 'voluntary_cs') else None
+    ]
+    # print stats
+    return stats
+
+def save_stats(variant):
+    stats = [test_stats(t, variant) for t in driver.all_tests]
+    file_name = 'benchmarks ' + variant + '.json'
+    with open(file_name, 'w') as f:
+        json.dump(stats, f,
+                  separators=(',', ':'))  # compact seriaization
 
 # TODO diagnostics:
 # ignore samples from 1st 1/8s - outliers before stable state?
