@@ -136,6 +136,10 @@
                   <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
                   <label for="clean">Exclude Outliers</label>
                 </form>
+                <form class="ct-label">
+                  <input type="checkbox" name="overhead" id="overhead" onchange="selectSeries(this)" class="hide">
+                  <label id="overheadLabel" for="overhead" class="hide">Exclude Setup Overhead</label>
+                </form>
                 <p id='note'></p>
               </div>
             </caption>
@@ -328,10 +332,21 @@ function currentlySelected(){
 // Series selection
 function selectSeries(s){
   if (s && s.id) { // s is #series element
-    $('series').className = `ct-label ${s.id}`
-    updateParam('outliers', s.id === 'clean' ? 'clean' : null)
+    if (s.id === 'overhead') {
+      updateParam('overhead', s.checked)
+      series.forEach(precomputeSeriesStats)
+      precomputeAllStats()
+      populateStatsTable()
+      computeHomeRange()
+      wait(1).then(function(){
+        sparklines.forEach(plot => wait(1000).then(plot))
+      })
+    } else {
+      $('series').className = `ct-label ${s.id}`
+      updateParam('outliers', s.id === 'clean' ? 'clean' : null)
+    }
 
-    plotVerticalHistogram().then(plotHistogram).then(plotLags)
+    plotBoxplot().then(plotVerticalHistogram).then(plotHistogram).then(plotLags)
       .then(wait).then(plotRuntimes).then(wait).then(plotScatterplot)
       .then(function(){
         highlightTraces(currentlySelected().seriesClass)
@@ -352,7 +367,7 @@ function selectSeries(s){
 }
 
 function highlightTraces(s, oldSeries){ // param type: seriesClass
-  const extras = [-1, -2, -3, -4]
+  const extras = [-1, -2, -3, -4, -5]
   let opacity = Array(series.length).fill(
     (!s) ? 0.5 : oldSeries ? undefined : 0.1)
 
@@ -376,6 +391,7 @@ function highlightTraces(s, oldSeries){ // param type: seriesClass
     traceLine(_s, 'median'),
     traceLine(_s, 'q1', 'dot'),
     traceLine(_s, 'q3', 'dot'),
+    traceLine(_s, 'tif', 'dashdot'),
   ], extras)
 }
 
@@ -401,14 +417,9 @@ function selectSeriesWithKeyboard(e) {
     selectSeries(series[i].seriesClass)
 }
 
-function cleanRuntimes(s){
-  if (s === allSeries) {
-    return series.reduce(
-      (a, s) => cleanRuntimes(s).concat(a), []).sort(ascending)
-  } else {
-    return s.runtimes.slice(0, bisect(s.runtimes, s.cutoff))
-  }
-}
+const cleanRuntimes = s => (s === allSeries)
+    ? [].concat(...series.map(cleanRuntimes)).sort(ascending)
+    : s.runtimes.slice(0, bisect(s.runtimes, s.cutoff))
 
 const columns = [ // [tooltip (title), th label]
   ['Runtimes', ''], ['Series', ''], ['Legend', ''], ['Number of Samples', 'n'],
@@ -454,6 +465,12 @@ const legendSVG = "<svg width='10' height='6' class='ct-chart-line'>" +
   "<g class='ct-series'><path class='ct-line' d='M0,3h10' />" +
   "<path class='ct-point' d='M5,3h.001'/></g></svg>"
 
+function clearChildren(node) {
+  let cNode = node.cloneNode(false)
+  node.parentNode.replaceChild(cNode, node)
+  return cNode
+}
+
 function populateStatsTable() {
   // Columns are joined to pairs and layed out as nested divs with flex, to
   // allow for two row formatting on narrow mobile displays
@@ -464,7 +481,7 @@ function populateStatsTable() {
   wrapInDivs = columnPair => columnPair.map((value, i) =>
     i === 0 ? div(value) : value !== undefined ? divPair(value) : null)
 
-  let titlesHeader = $('titles')
+  let titlesHeader = clearChildren($('titles'))
   // columns.forEach(t => titlesHeader.appendChild(th(t)))
   zippedSingleAndDouble = zip([columns, columns.reduce(toPairs, [])])
   const dedupe = ([[a, b], c]) => [[a, b], c === undefined ? c :
@@ -513,16 +530,17 @@ function populateStatsTable() {
   series.forEach(generateSeriesStatRows)
   generateSeriesStatRows(allSeries)
 
-  let statsTable = $('stats')
+  let stats = clearChildren($('stats'))
   rows.forEach(tr => tr.onclick = ev => selectSeries(findSeries(ev.target)))
-  rows.reverse().forEach(tr => statsTable.appendChild(tr))
+  rows.reverse().forEach(tr => stats.appendChild(tr))
 
   var s = getParam('s', null) // selected series
   s = s ? (seriesClassPrefix + s) : 'all-series'
   Array.from(document.getElementsByClassName(s)).forEach(select)
 }
 
-function computeSetupOverhead() {
+function setupOverhead() {
+  if (allSeries.setup_overhead) return allSeries.setup_overhead
   // Compute setup overhead
   // iterations i = 1, j = 2
   // s = (i * j (ti -tj)) / (j - i)
@@ -542,18 +560,18 @@ function computeSetupOverhead() {
     let setup = (i * j * (ti - tj)) / (j - i)
     let ratio = setup/ti
     if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
-      let note = $('note')
-      note.innerHTML += ` Setup overhead: ${setup}µs (${round(ratio*100, 1)}%) `
+      let label = $('overheadLabel')
+      label.innerHTML += ` <span class='ct-label'>${setup}µs (${round(ratio*100, 1)}%) `
       allSeries.setup_overhead = setup
+      $('overhead').checked = getParam('overhead', false)
+      removeClass($('overhead'), 'hide')
+      removeClass($('overheadLabel'), 'hide')
     }
     console.log([ti, tj, setup, `${round(setup/ti*100, 2)}%`, allSeries.cleanStats.iqr]);
+  } else {
+    allSeries.setup_overhead = 0
   }
-
-  // let ti = seriesAverage(iterations[1], 'q1')
-  // let tj = seriesAverage(iterations[2], 'q1')
-  // console.log([ti, tj, 2*(ti-tj)]);
-  // let tk = seriesAverageMinimum(iterations[4])
-  // console.log([tj, tk, 8*(tj-tk)/2]);
+  return allSeries.setup_overhead
 }
 
 // Traces
@@ -595,7 +613,6 @@ function movingAverage(x, y, steps) {
 }
 
 function traceScatterPlot(s) {
-  // TODO subtract setup overhead here during filtering
   const cutoff = s.cutoff
   // const o = allSeries.setup_overhead ?
   //   round(allSeries.setup_overhead / s.num_iters) : 0
@@ -631,12 +648,11 @@ function traceScatterPlot(s) {
 function traceLine(s, stat, dash) {
   let y = (seriesIsRaw() ? s.rawStats : s.cleanStats)[stat]
   return {
-    x: allSeries.homeRange.x,
-    y: [y, y],
+    x: allSeries.homeRange.x, y: [y, y],
     name: nameOf(s) + ' ' + stat[0].toUpperCase() + stat.slice(1),
-    type: 'scatter',
-    mode: 'lines',
-    connectgaps: true, opacity: 1, cliponaxis: false,
+    type: 'scatter', mode: 'lines',
+    connectgaps: true, cliponaxis: false,
+    opacity: (dash === 'dashdot') ? .5 : 1,
     line : { color: colorForSeries(s), width: .75, dash}
   }
 }
@@ -755,9 +771,6 @@ function synchronizeZoom() {
 }
 
 function selectedSeries() {
-  // FIXME precompute clean runtimes only once and switch the
-  // .runtimes pointer to appropriate array in the currentlySelected()
-  // This should help eliminate seriesIsRaw, too?
   let selected = currentlySelected().series
   return {
     name: selected.name,// ? selected.name : ' All Series',
@@ -785,8 +798,8 @@ function computeStats(a) { // assumes `a` is sorted ascending
   let [min, q1, median, q3, max] = [a[0], a[Q1], a[Q2], a[Q3], a[n - 1]]
   let [mean, sd] = [Math.round(M), Math.round(Math.sqrt(S/(n-1)))]
   let [range, iqr] = [max - min, q3 - q1]
-  const pom = (r) => (M) ? round((r / M * 100)) + '%' : '-' // percent of mean
-  let [cv, spread, iqrs] = [pom(sd), pom(range), pom(iqr)]
+  const pob = (r, b) => (b) ? round((r / b * 100)) + '%' : '-' // percent of base
+  let [cv, spread, iqrs] = [pob(sd, M), pob(range, min), pob(iqr, median)]
   return {
     min, q1, median, q3, max, n, mean, sd, cv, range, spread,
     iqr,  iqrs, tif: round(q3 + 1.5 * iqr),
@@ -860,7 +873,6 @@ function traceVerticalHistogram(s) {
       size: Math.ceil(allSeries.cleanStats.max/1000),
     },
     opacity: 0.6,
-    // y: cleanRuntimes(s),
     y: s.runtimes,
     marker: { color: colorForSeries(s) }
   }}
@@ -1070,7 +1082,8 @@ let histogram = $('histogram')
 let sparklines = []
 var series = []
 var runtimes = []
-let allSeries
+let allSeries = {}
+let jsonData
 
 Array.prototype.groupBy = function(prop) {
   return this.reduce(function(groups, item) {
@@ -1105,11 +1118,39 @@ let outliers = getParam('outliers', 'raw')
 setClass($('series'), outliers)
 $(outliers).checked = true
 
-var logFile = getParam('f', 'f.json')
-fetch(logFile).then(function(response) {
-  return response.json();
-}).then(function(data) {
-  allSeries = data
+const precomputeSeriesStats = s => {
+  let overhead = getParam('overhead', false) ? allSeries.setup_overhead : 0
+  let correction = overhead ? round(overhead / s.num_iters) : 0
+  s.data = jsonData[s.name].map(runtime => runtime - correction)
+  s.runtimes = s.data.slice().sort(ascending)
+  s.rawStats = computeStats(s.runtimes)
+  s.cutoff = s.rawStats.tif
+  s.cleanStats = computeStats(cleanRuntimes(s)) // must be after cutoff is set
+  s.seriesClass = seriesClassPrefix + s.name.split(' ')[1]
+}
+
+function precomputeAllStats() {
+  allSeries.involuntary_cs = series.map(s => s.involuntary_cs).reduce(sum)
+  allSeries.voluntary_cs = series.map(s => s.voluntary_cs).reduce(sum)
+  allSeries.data = [].concat(...series.map(s => s.data))
+  allSeries.runtimes = allSeries.data.slice().sort(ascending)
+  allSeries.rawStats = computeStats(allSeries.runtimes)
+  allSeries.cleanStats = computeStats(cleanRuntimes(allSeries)) // is fine here
+  allSeries.cutoff = allSeries.cleanStats.max
+  allSeries.seriesClass = 'all-series'
+  allSeries.name += ' all'
+}
+
+function computeHomeRange() {
+  let p = round(allSeries.cleanStats.range * 0.01, 1)
+  allSeries.homeRange = {
+    y: [allSeries.cleanStats.min - p,
+        allSeries.cleanStats.max + p].map(roundRange),
+    x: [0, Math.max(...series.map(elapsedTime))]
+  }
+}
+
+function computeStatsFromData(data) {
   $('title').innerHTML = data.name;
   document.title = data.name;
 
@@ -1117,49 +1158,34 @@ fetch(logFile).then(function(response) {
 
   let maxSeriesLength = data.series.map(s => s.data.length).reduce(max)
   if (maxSeriesLength > _2k) {
-    // $('note').innerHTML = 'Series longer than 2k were trimmed.'
     $('note').innerHTML = 'Trimmed series w/ n > 2k.'
   }
-  data.series.forEach(s => {
-    let l = s.data.length
-    if (s.data.length > _2k){
-      s.data = s.data.slice(0, _2k)
-      // console.log(`trimmed series ${s.name} from ${l} to ${s.data.length}`)
-    }
-  })
+  const clampData = s => {
+    if (s.data.length > _2k) { s.data = s.data.slice(0, _2k) }}
+  data.series.forEach(clampData)
+
   series = data.series.sort(descendingByIterationsAndName)
-  // Prepare runtimes for histogram
-  allSeries.runtimes = []
-  allSeries.data = []
-  allSeries.involuntary_cs = 0
-  allSeries.involuntary_cs = 0
-  series.forEach(s => {
-    allSeries.runtimes = s.data.concat(allSeries.runtimes)
-    allSeries.data = s.data.concat(allSeries.data)
-    allSeries.involuntary_cs += s.involuntary_cs
-    allSeries.voluntary_cs += s.voluntary_cs
-    s.runtimes = s.data.slice().sort(ascending)
-    s.rawStats = computeStats(s.runtimes)
-    s.cutoff = s.rawStats.tif
-    s.cleanStats = computeStats(cleanRuntimes(s)) // must be after cutoff is set
-    s.seriesClass = seriesClassPrefix + s.name.split(' ')[1]
-  })
-  allSeries.runtimes.sort(ascending)
-  allSeries.rawStats = computeStats(allSeries.runtimes)
-  allSeries.cleanStats = computeStats(cleanRuntimes(allSeries)) // is fine here
-  allSeries.cutoff = allSeries.cleanStats.max
-  allSeries.seriesClass = 'all-series'
-  allSeries.name += ' all'
-  let p = round(allSeries.cleanStats.range * 0.01, 1)
-  allSeries.homeRange = {
-    y: [allSeries.cleanStats.min - p,
-        allSeries.cleanStats.max + p].map(roundRange),
-    x: [0, Math.max(...series.map(elapsedTime))]
+
+  series.forEach(precomputeSeriesStats)
+  precomputeAllStats()
+
+  if (setupOverhead()) {
+    series.forEach(precomputeSeriesStats)
+    precomputeAllStats()
   }
 
   generateSeriesCSS()
   populateStatsTable()
-  computeSetupOverhead()
+  computeHomeRange()
+}
+
+var logFile = getParam('f', 'f.json')
+fetch(logFile).then(function(response) {
+  return response.json()
+}).then(function(data) {
+  jsonData = data // back up original data
+  data.series.forEach(s => { jsonData[s.name] = s.data.slice() })
+  computeStatsFromData(data)
 })
 .then(generateNavigationForm)
 .then(plotVerticalHistogram)
@@ -1202,10 +1228,6 @@ function generateNavigationForm(){ // Navigation form
   })
 }
 
-/* TODO ?
- - add micro histograms to table
- - Excludes Outliers: iteratively (while TIF < MAX), do also Bottom Inner Fence
-*/
 </script>
   </body>
 </html>
