@@ -15,6 +15,8 @@ TODO
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
       body {font-family: system-ui, -apple-system;}
+      h1 {font-size: 1.5rem}
+      h2 {font-size: 1.1rem; margin-top: 0;}
       a {text-decoration: none;}
       td a {display: block; width: 100%}
       table {font-variant-numeric: tabular-nums;
@@ -47,22 +49,17 @@ TODO
     </script>
   </head>
   <body>
-        <div class='benchmarks, ct-label'>
-          <table id="benchmarks">
-            <caption>
-              <div class='caption'>
-                <h1 id='title'>Series</h1>
-                <p id='note'></p>
-              </div>
-            </caption>
-            <thead>
-              <tr id="columns"></tr>
-            </thead>
-            <tbody id="stats" class="stats">
-            </tbody>
-          </table>
-        </div>
+
 <script>
+
+Array.prototype.groupBy = function(prop) {
+  return this.reduce(function(groups, item) {
+    var val = item[prop];
+    groups[val] = groups[val] || [];
+    groups[val].push(item);
+    return groups;
+  }, {});
+}
 
 function round(x, precision = 0) {
   let factor = Math.pow(10, precision);
@@ -79,10 +76,6 @@ function updateParam(name, value) {
   if (value) { params.set(name, value) }
   else { params.delete(name) }
   window.history.replaceState({}, '', `${location.pathname}?${params}`)
-}
-
-function selectSeries(s){
-    benchmarks.className = s.id
 }
 
 const zip = rows=>rows[0].map((_,c)=>rows.map(row=>row[c]))
@@ -107,6 +100,8 @@ const allColumns = [
 
 const columns = [
   ['Benchmark', 'Benchmark'], ['Number of Samples per Series','n'],
+  ['Accumulated Error: x̅ - Min', 'ME'],
+  ['Percent Relative Accumulated Error', 'ME%'],
   ['Minimum', 'Min'],
   ['Best Mean', 'x̅'], ['Clean Median', 'Med'],
   ['Accumulated Error: x̅ - Med', 'E'],
@@ -137,7 +132,7 @@ const not = f => (p) => !f(p)
 var bs
 
 let variant = getParam('variant', 'ten')
-$('title').innerHTML = `'${variant}' Series`
+
 var statsFile = `benchmarks ${variant}.json`
 fetch(statsFile).then(function(response) {
   return response.json();
@@ -157,53 +152,69 @@ fetch(statsFile).then(function(response) {
     }
   })
 
-  let rows = d3.select('#stats').selectAll('tr')
-    .data(benchmarks).enter().append('tr')
+  let body = d3.select('body')
+  body.append('h1').text(`'${variant}' Series`)
 
-  d3.select('#columns').selectAll('th')
-		  .data(columns).enter()
-		  .append('th')
-        .attr('title', ([title, _]) => title)
-		    .text(([_, label]) => label)
-        .on('click', sortRowsByColumn(rows))
+  let buckets = benchmarks.groupBy('num_samples')
+  bs = buckets
 
-  d3.select('#columns').select('th:first-child').classed('ascending', true)
+  body.selectAll('table').data(Object.entries(buckets)).enter()
+    .append('table')
+    .each(function([num_samples, benchmarks]) {
+      let table = d3.select(this)
+      table.append('caption').append('div').attr('class', 'caption')
+        .append('h2').text(num_samples)
+      let thead = table.append('thead')
+      let tbody = table.append('tbody')
+      let rows = tbody.selectAll('tr').data(benchmarks).enter().append('tr')
 
-  const cellsForBenchmark = (b) => {
-    let minMean = Math.min(...b.raw.map(s => s.mean))
-    let all = b.all.fixed || b.all.clean
-    let median = all.median
-    let values = [
-      b.name, b.num_samples, all.min, minMean, median, (minMean - median),
-      round((minMean - median) / all.min * 100) + '%',
-      all.iqr, all.riqr, all.ics, setupOverhead(b)]
+      thead.selectAll('th').data(columns).enter()
+    		  .append('th')
+            .attr('title', ([title, _]) => title)
+    		    .text(([_, label]) => label)
+            .on('click', sortRowsByColumn(rows))
+      thead.select('th:first-child').attr('class', 'ascending')
 
-    let c = zip([columns, values])
-    c.forEach( // cache values for quick sorting
-      ([[title, label], value], i) => {
-        b[label] = (i ===0) ? value /* Benchmark */
-        : parseInt(value) || 0 })
-    return c
-  }
-
-  rows.selectAll('td')
-	  .data(cellsForBenchmark).enter()
-	  .append('td')
-      .each(function ([[title, label], value], i) {
-        let td = d3.select(this)
-        td.attr('title', title)
-        if (i === 0) { // first cell
-          td.append('a')
-            .attr('target', 'there')
-            .attr('href', `chart.html?f=${value} ${variant}.json`)
-            .text(value)
-          td.append('div').attr('class', 'spacer').text(value)
-        } else {
-          td.text(value)
-        }
-      })
-
+      rows.selectAll('td').data(cellsForBenchmark).enter()
+    	  .append('td')
+        .each(function ([[title, label], value], i) {
+          let td = d3.select(this)
+          td.attr('title', title)
+          if (i === 0) { // first cell
+            td.append('a')
+              .attr('target', 'there')
+              .attr('href', `chart.html?f=${value} ${variant}.json`)
+              .text(value)
+            td.append('div').attr('class', 'spacer').text(value)
+          } else {
+            td.text(value)
+          }
+        })
+    })
 })
+
+const num_iters = s => parseInt(s.name.substring(1, s.name.length - 1))
+
+function cellsForBenchmark(b) {
+  let overhead = b.setup_overhead ? b.setup_overhead[0] : 0
+  let minMean = Math.min(...b.raw.map(
+    s => s.mean - round(overhead / num_iters(s))))
+  let all = b.all.fixed || b.all.clean
+  let median = all.median
+  let values = [
+    b.name, b.num_samples,
+    (minMean - all.min), round((minMean - all.min) / all.min * 100) + '%',
+    all.min, minMean, median, (minMean - median),
+    round((minMean - median) / median * 100) + '%',
+    all.iqr, all.riqr, all.ics, setupOverhead(b)]
+
+  let c = zip([columns, values])
+  c.forEach( // cache values for quick sorting
+    ([[title, label], value], i) => {
+      b[label] = (i ===0) ? value /* Benchmark */
+      : parseInt(value) || 0 })
+  return c
+}
 
 const v = (benchmark, column) => // value accessor
   benchmark[column[1]]
@@ -214,7 +225,7 @@ function sortRowsByColumn(rows) {
     const sortingOrder = (sorted) => sorted.classed('ascending')
 
     let oldSorted =
-      d3.select('#benchmarks').select("th.ascending,th.descending")
+      d3.select(this.parentNode).select("th.ascending,th.descending")
     let newSorted = d3.select(this)
 
     var order = sortingOrder(oldSorted)
