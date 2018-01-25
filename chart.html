@@ -334,19 +334,15 @@ function selectSeries(s){
   if (s && s.id) { // s is #series element
     if (s.id === 'overhead') {
       updateParam('overhead', s.checked)
-      series.forEach(precomputeSeriesStats)
       precomputeAllStats()
       populateStatsTable()
-      computeHomeRange()
-      wait(1).then(function(){
-        sparklines.forEach(plot => wait(1000).then(plot))
-      })
+      plotBoxplot().then(plotSparklines)
     } else {
       $('series').className = `ct-label ${s.id}`
       updateParam('outliers', s.id === 'clean' ? 'clean' : null)
     }
 
-    plotBoxplot().then(plotVerticalHistogram).then(plotHistogram).then(plotLags)
+    plotVerticalHistogram().then(plotHistogram).then(plotLags)
       .then(wait).then(plotRuntimes).then(wait).then(plotScatterplot)
       .then(function(){
         highlightTraces(currentlySelected().seriesClass)
@@ -378,7 +374,7 @@ function highlightTraces(s, oldSeries){ // param type: seriesClass
     opacity[seriesIndex(oldSeries)] = (!s) ? 0.5 : 0.1
     Plotly.moveTraces(chart, -1, seriesIndex(oldSeries)) // move back
   }
-  if (s) { opacity[seriesIndex(s)] = 0.8 }
+  if (s) { opacity[seriesIndex(s)] = 0.6 }
 
   Plotly.restyle(chart, {opacity: opacity})
 
@@ -1130,6 +1126,7 @@ const precomputeSeriesStats = s => {
 }
 
 function precomputeAllStats() {
+  series.forEach(precomputeSeriesStats)
   allSeries.involuntary_cs = series.map(s => s.involuntary_cs).reduce(sum)
   allSeries.voluntary_cs = series.map(s => s.voluntary_cs).reduce(sum)
   allSeries.data = [].concat(...series.map(s => s.data))
@@ -1138,7 +1135,7 @@ function precomputeAllStats() {
   allSeries.cleanStats = computeStats(cleanRuntimes(allSeries)) // is fine here
   allSeries.cutoff = allSeries.cleanStats.max
   allSeries.seriesClass = 'all-series'
-  allSeries.name += ' all'
+  computeHomeRange()
 }
 
 function computeHomeRange() {
@@ -1151,8 +1148,10 @@ function computeHomeRange() {
 }
 
 function computeStatsFromData(data) {
-  $('title').innerHTML = data.name;
-  document.title = data.name;
+  $('title').innerHTML = data.name
+  document.title = data.name
+  allSeries.name = data.name + ' all'
+  console.log(allSeries.name)
 
   const _2k = 2048
 
@@ -1163,30 +1162,24 @@ function computeStatsFromData(data) {
   const clampData = s => {
     if (s.data.length > _2k) { s.data = s.data.slice(0, _2k) }}
   data.series.forEach(clampData)
+  jsonData = {} // back up original data
+  data.series.forEach(s => { jsonData[s.name] = s.data.slice() })
 
   series = data.series.sort(descendingByIterationsAndName)
 
-  series.forEach(precomputeSeriesStats)
   precomputeAllStats()
-
-  if (setupOverhead()) {
-    series.forEach(precomputeSeriesStats)
+  if (setupOverhead()) { // again, we needed cleanStats to compute overhead
     precomputeAllStats()
   }
 
-  generateSeriesCSS()
-  populateStatsTable()
-  computeHomeRange()
 }
 
 var logFile = getParam('f', 'f.json')
-fetch(logFile).then(function(response) {
-  return response.json()
-}).then(function(data) {
-  jsonData = data // back up original data
-  data.series.forEach(s => { jsonData[s.name] = s.data.slice() })
-  computeStatsFromData(data)
-})
+fetch(logFile)
+.then((response) => response.json())
+.then(computeStatsFromData)
+.then(populateStatsTable)
+.then(generateSeriesCSS)
 .then(generateNavigationForm)
 .then(plotVerticalHistogram)
 .then(plotBoxplot)
@@ -1198,9 +1191,12 @@ fetch(logFile).then(function(response) {
   wait(1).then(plotRuntimes)
   wait(10).then(plotScatterplot).then(function(){
     highlightTraces(currentlySelected().seriesClass)
-  })
-  sparklines.forEach(plot => wait(1000).then(plot))
+  }).then(plotSparklines)
 })
+
+function plotSparklines() {
+  return sparklines.reduce((p1, p2) => p1.then(wait).then(p2), wait(1000))
+}
 
 const isHidden = e => e.offsetParent === null
 
