@@ -129,7 +129,7 @@
           <table id="series" class="ct-label">
             <caption>
               <div class='caption'>
-                <h2>Series</h2>
+                <h2 id="seriesTitle">Series</h2>
                 <form class="ct-label">
                   <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
                   <label for="raw">Raw</label>
@@ -1149,6 +1149,7 @@ function computeHomeRange() {
 
 function computeStatsFromData(data) {
   $('title').innerHTML = data.name
+  $('seriesTitle').innerHTML = `'${variant}' Series`
   document.title = data.name
   allSeries.name = data.name + ' all'
   console.log(allSeries.name)
@@ -1174,7 +1175,11 @@ function computeStatsFromData(data) {
 
 }
 
-var logFile = getParam('f', 'f.json')
+let logFile = getParam('f', 'f.json')
+let logFileComponents = logFile.split(' ')
+let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
+let variant = fileSuffix.length ? fileSuffix.split('.')[0] : ''
+
 fetch(logFile)
 .then((response) => response.json())
 .then(computeStatsFromData)
@@ -1203,9 +1208,6 @@ const isHidden = e => e.offsetParent === null
 function generateNavigationForm(){ // Navigation form
   let benchmark = $('benchmark')
   if (isHidden(benchmark)) { return }
-
-  let logFileComponents = logFile.split(' ')
-  let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
 
   var benchmarks
   fetch('benchmarks.json').then(function(response) {
