@@ -14,13 +14,11 @@
       .ct-major-tenth:before {display: block; float: left; content: "";
           width: 0; height: 0; padding-bottom: 40%}
       .ct-major-tenth:after {display: table}
-      .ct-major-tenth > svg {display: block;position: absolute; top: 0; left: 0}
 
       .ct-square {display: block; position: relative; width: 100%}
       .ct-square:before {display: block; float: left; content: "";
           width: 0; height: 0; padding-bottom: 100%}
       .ct-square:after {display: table}
-      .ct-square > svg {display: block; position: absolute; top: 0; left: 0}
       .ct-major-tenth:after, .ct-square:after {content: "";clear: both}
       .ct-label, #note {font-size: .6rem; fill: rgba(0, 0, 0, .4); color: rgba(0, 0, 0, .4);}
       .ct-series {opacity: 0.5}
@@ -118,6 +116,7 @@
         Zoom:
         <button id="autoscale" title="Autoscale" onclick="zoomAutoscale(); return false;">&nbsp;</button>
         <button id="resetzoom" title="Reset Zoom" onclick="resetZoom(); return false;">&nbsp;</button>
+        <button id="cleanzoom" title="Zoom to Clean" onclick="cleanZoom(); return false;">&nbsp;</button>
       </div>
       <button onclick="$('benchmark').selectedIndex--;">&#10094;</button>
       <button onclick="$('benchmark').selectedIndex++;">&#10095;</button>
@@ -318,6 +317,7 @@ const iconRule = (selector, icon) => `${selector} {
   url("data:image/svg+xml;utf8,${svgString(icon)}");}`
 sheet.insertRule(iconRule('#autoscale', Plotly.Icons.autoscale), 0)
 sheet.insertRule(iconRule('#resetzoom', Plotly.Icons.home), 0)
+sheet.insertRule(iconRule('#cleanzoom', Plotly.Icons.zoombox), 0)
 
 function currentlySelected(){
   let elements = Array.from(document.getElementsByClassName('selected'))
@@ -336,13 +336,13 @@ function selectSeries(s){
       updateParam('overhead', s.checked)
       precomputeAllStats()
       populateStatsTable()
-      plotBoxplot().then(plotSparklines)
+      plotSparklines()
     } else {
       $('series').className = `ct-label ${s.id}`
       updateParam('outliers', s.id === 'clean' ? 'clean' : null)
     }
 
-    plotVerticalHistogram().then(plotHistogram).then(plotLags)
+    plotBoxplot().then(plotVerticalHistogram).then(plotHistogram).then(plotLags)
       .then(wait).then(plotRuntimes).then(wait).then(plotScatterplot)
       .then(function(){
         highlightTraces(currentlySelected().seriesClass)
@@ -610,11 +610,8 @@ function movingAverage(x, y, steps) {
 
 function traceScatterPlot(s) {
   const cutoff = s.cutoff
-  // const o = allSeries.setup_overhead ?
-  //   round(allSeries.setup_overhead / s.num_iters) : 0
   let filtered = s => seriesIsRaw() ? s.data.slice() :
     s.data.map(r => (r <= cutoff) ? r : null)
-    // s.data.map(r => (r <= cutoff) ? r - o : null)
 
   let data = {x: runningTime(s.data, s.num_iters), y: filtered(s)}
   let {x, y} = data
@@ -642,14 +639,15 @@ function traceScatterPlot(s) {
 // console.log("computed XXX " + round(t1 - t0, 1) + " ms");
 
 function traceLine(s, stat, dash) {
-  let y = (seriesIsRaw() ? s.rawStats : s.cleanStats)[stat]
+  let y = s[stats()][stat]
   return {
     x: allSeries.homeRange.x, y: [y, y],
     name: nameOf(s) + ' ' + stat[0].toUpperCase() + stat.slice(1),
-    type: 'scatter', mode: 'lines',
+    type: 'scatter', mode: 'lines+markers',
     connectgaps: true, cliponaxis: false,
     opacity: (dash === 'dashdot') ? .5 : 1,
-    line : { color: colorForSeries(s), width: .75, dash}
+    line : { color: colorForSeries(s), width: .75, dash},
+    marker: { symbol: 'square-open', size: 4}
   }
 }
 
@@ -657,7 +655,7 @@ function traceMeanArea(s) {
   let t = traceScatterPlot(s)
   t.fill = 'toself'; t.mode = 'lines'; t.line.width = 0
   t.fillcolor = fillColorForSeries(s)
-  let m = seriesIsRaw() ? s.rawStats.mean : s.cleanStats.mean
+  let m = s[stats()].mean
   var i = firstNonNull(t.y)
   t.x.splice(i, 0, t.x[i]); t.y.splice(i, 0, m)
   i = lastNonNull(t.y)
@@ -734,6 +732,13 @@ function resetZoom() {
   Plotly.relayout(chart, l, true)
 }
 
+function cleanZoom() {
+  let l = layoutAxis()
+  l.yaxis.range = allSeries.cleanRange.y.slice()
+  l.xaxis.range = allSeries.cleanRange.x.slice()
+  Plotly.relayout(chart, l, true)
+}
+
 function zoomAutoscale() {
   Plotly.relayout(chart, {
     'xaxis.range': allSeries.homeRange.x.slice(),
@@ -773,6 +778,8 @@ function selectedSeries() {
     seriesClass: selected.seriesClass,
     runtimes: seriesIsRaw() ? selected.runtimes : cleanRuntimes(selected),
     cutoff: selected.cutoff,
+    cleanStats: selected.cleanStats,
+    rawStats: selected.rawStats,
   }
 }
 
@@ -844,11 +851,11 @@ const suma = ([a, c]) => a + c
 const nameOf = s => s.name.split(' ')[1] // throw away common prefix
 
 const boxplot5numSummary = s =>
-  [s.rawStats.min, s.rawStats.q1, s.rawStats.median,
-    s.rawStats.median, s.rawStats.q3, s.cleanStats.max]
+  ['min', 'q1', 'median', 'median', 'q3', 'max'].map(stat => s[stats()][stat])
+
+const stats = () => seriesIsRaw() ? 'rawStats' : 'cleanStats'
 
 function traceBoxPlot(s) {
-  // console.log(s.name, boxplot5num(s))
   return {
     name: nameOf(s),
     type: 'box',
@@ -858,14 +865,30 @@ function traceBoxPlot(s) {
     marker: { color: colorForSeries(s) },
     line : { width: 1.4}
   }}
+
+function traceMean(s) {
+  let mean = s[stats()].mean
+  let tif = s.rawStats.tif
+  let tof = s.rawStats.median + (3 * s.rawStats.irq)
+  let symbol = (mean <= tif) ? 'line-ew-open' :
+    (mean <= tof) ? 'circle-open' : 'circle'
+  return {
+    x: [series.length - 1 - seriesIndex(s.seriesClass)],
+    y: [mean],
+    name: 'x̅',
+    type: 'scatter',mode: 'markers', opacity: 0.5, cliponaxis: false,
+    marker: { color: colorForSeries(s), size: 5, symbol
+    },
+  }}
+
 function traceVerticalHistogram(s) {
   return {
     name: nameOf(s),
     type: 'histogram',
     hoverinfo:'x+y',
     ybins: {
-      start: allSeries.cleanStats.min-1,
-      end: allSeries.cleanStats.max+1,
+      start: s[stats()].min - 1,
+      end: s[stats()].max + 1,
       size: Math.ceil(allSeries.cleanStats.max/1000),
     },
     opacity: 0.6,
@@ -1041,7 +1064,8 @@ function plotHistogram() {
 function plotBoxplot () {
   let bp = $('boxplot'); if (isHidden(bp)) return
   let p = Plotly.newPlot(bp,
-    series.map(traceBoxPlot).reverse(),
+    series.map(traceMean).concat(
+    series.map(traceBoxPlot).reverse()),
     join(layoutSansAxis(), {hovermode: ''}), noModeBar)
   bp.on('plotly_click', selectClickedSeries)
   bp.on('plotly_afterplot', fixDimensions(bp))
@@ -1142,6 +1166,11 @@ function computeHomeRange() {
   let p = round(allSeries.cleanStats.range * 0.01, 1)
   allSeries.homeRange = {
     y: [allSeries.cleanStats.min - p,
+        Math.max(...series.map(s => s.rawStats.mean)) + p].map(roundRange),
+    x: [0, Math.max(...series.map(elapsedTime))]
+  }
+  allSeries.cleanRange = {
+    y: [allSeries.cleanStats.min - p,
         allSeries.cleanStats.max + p].map(roundRange),
     x: [0, Math.max(...series.map(elapsedTime))]
   }
@@ -1152,7 +1181,6 @@ function computeStatsFromData(data) {
   $('seriesTitle').innerHTML = `'${variant}' Series`
   document.title = data.name
   allSeries.name = data.name + ' all'
-  console.log(allSeries.name)
 
   const _2k = 2048
 
