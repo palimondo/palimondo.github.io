@@ -1,10 +1,5 @@
 <!DOCTYPE html>
 <!--
-TODO
- links to chart.html?f=XXX
- sorting
- boxplot
- FIXME sum of all samples is strange for n = 4096
  -->
 <html>
   <head>
@@ -14,8 +9,11 @@ TODO
     <!-- <script type="text/javascript" src="http://d3js.org/d3.v3.min.js"></script> -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
+
+      html, body {height: 100%; margin: 0}
+      body {display: flex; flex-flow: column;}
       body {font-family: system-ui, -apple-system;}
-      h1 {font-size: 1.5rem}
+      h1 {font-size: 1.5rem; margin-left: 1rem}
       h2 {font-size: 1.1rem; margin-top: 0;}
       a {text-decoration: none;}
       td a {display: block; width: 100%}
@@ -31,10 +29,18 @@ TODO
         white-space: pre-wrap; word-wrap: break-word;}
       tbody tr:hover {background-color: Highlight; }
       tr {border-bottom: 1px solid rgba(0,0,0, .1)}
-      .caption {display: flex; flex-flow: row wrap; color: black; }
-      .caption > * {margin: auto 0; flex: 0 0 auto;}
-      .caption form {font-size: 0.75rem;
-        margin: auto .8em auto 1em;}
+
+      /* .chart {width: 100%; height: 100%} */
+      .chart {border: 1px solid Highlight; background: red;}
+      .chart {flex: 1;}
+      /* .chart {display: block; position: relative; width: 100%} */
+      /* .chart {width: 1280px; height: 480px} */
+      /* .chart:before {display: block; float: left; content: "";
+          width: 0; height: 0; padding-bottom: 40%}
+      .chart:after {display: table}
+      .chart > svg {display: block; position: absolute; top: 0; left: 0}
+      .chart:after {content: "";clear: both} */
+
 
       .ascending {
         background: linear-gradient(to top, Highlight 0%, white 100%)}
@@ -49,7 +55,6 @@ TODO
     </script>
   </head>
   <body>
-
 <script>
 
 Array.prototype.groupBy = function(prop) {
@@ -69,6 +74,10 @@ function round(x, precision = 0) {
 function getParam(name, defaultValue='') {
   let value = (new URLSearchParams(location.search)).get(name)
   return value ? value : defaultValue
+}
+
+function getParams(name) {
+  return (new URLSearchParams(location.search)).getAll(name)
 }
 
 function updateParam(name, value) {
@@ -123,7 +132,7 @@ const Stats = (s) => new Proxy(s, {
   }})
 
 const emptyStats = (() => { // 🖕 TypeFlood
-  let e = Array(seriesKeys.length); e.fill(''); e[0] = 'all'; return e
+  let e = Array(seriesKeys.length).fill(''); e[0] = 'all'; return e
 })()
 
 const allSeries = s => s.name === 'all'
@@ -131,39 +140,119 @@ const not = f => (p) => !f(p)
 
 var bs
 
-let variant = getParam('variant', 'ten')
-
-var statsFile = `benchmarks ${variant}.json`
-fetch(statsFile).then(function(response) {
-  return response.json();
-}).then(function(benchmarks) {
-  bs = benchmarks
-  benchmarks.forEach(b => {
-    raw = b.rawStats.map(Stats)
-    clean = b.cleanStats.map(Stats)
-    b.all = {
-      raw: raw.filter(allSeries)[0] || emptyStats,
-      clean: clean.filter(allSeries)[0] || emptyStats,
-    }
-    b.raw = raw.filter(not(allSeries))
-    b.clean = clean.filter(not(allSeries))
-    if (b.setup_overhead) {
-      b.all.fixed = Stats(b.setup_overhead[2])
-    }
+const fetchBenchmarkStats = (variant) =>
+  fetch(`benchmarks ${variant}.json`).then(function(response) {
+    return response.json().then(function(benchmarks) {
+      // console.log(['Parsed JSON from: ', response.url])
+      let variant = decodeURI(response.url).split(' ')[1].split('.')[0]
+      benchmarks.forEach(b => {
+        b.variant = variant
+        raw = b.rawStats.map(Stats)
+        clean = b.cleanStats.map(Stats)
+        b.all = {
+          raw: raw.filter(allSeries)[0] || emptyStats,
+          clean: clean.filter(allSeries)[0] || emptyStats,
+        }
+        b.raw = raw.filter(not(allSeries))
+        b.clean = clean.filter(not(allSeries))
+        if (b.setup_overhead) {
+          b.all.fixed = Stats(b.setup_overhead[2])
+        }
+      })
+      return benchmarks
+    })
   })
 
-  let body = d3.select('body')
-  body.append('h1').text(`'${variant}' Series`)
+let variants = getParams('variant')
+let body = d3.select('body')
+let header = variants.map(v => `'${v}'`).join(' vs. ')
+document.title = header
+body.append('h1').text('Series ' + header)
+
+let hasOverhead = {}
+
+Promise.all(variants.map(fetchBenchmarkStats))
+.then(function(variants) {
+
+  // TODO overhead detection is not robust enough,
+  // There are false positives. Work around it for now by requiring
+  // all variants to exhibit the overhead before applying it.
+
+  const countOverhead = (counter, b) => {
+    counter[b.name] = (counter[b.name] || 0) + (b.setup_overhead ? 1 : 0)
+    return counter
+  }
+  let overheadCountIndex = 1 // [name, overheadCount]
+  let overheadCount = Object.entries(
+    variants.reduce((counter, benchmarks) =>
+      benchmarks.reduce(countOverhead, counter), {})
+    ).groupBy(overheadCountIndex)
+
+  // console.log(overheadCount);
+
+  const setNameTrue = (m, [name, _]) => {m[name] = true; return m}
+  overheadCount[variants.length].reduce(setNameTrue, hasOverhead)
+
+  // console.log(hasOverhead);
+
+  variants.forEach(benchmarks => {
+    benchmarks.forEach(b => {
+      if (b.setup_overhead && !hasOverhead[b.name]) {
+        // console.log(`Erasing overhead: ${b.name} ${b.variant}`);
+        delete b.all.fixed
+      }
+    })
+  })
+
+  const orderBernchmarks = (variants, stat) => {
+    let b2q1 = {}
+    let benchmarks = [].concat(...variants)
+    benchmarks.forEach(b => {
+      b2q1[b.name] = Math.min((b2q1[b.name] || Number.MAX_VALUE),
+        (b.all.fixed || b.all.clean)[stat])
+    })
+    let orderedNames = Object.keys(b2q1).sort((a, b) => b2q1[a] - b2q1[b])
+    let b2i = {}
+    orderedNames.forEach((name, i) => { b2i[name] = i })
+    return b2i
+  }
+  let b2i = orderBernchmarks(variants, 'q1')
+
+  variants.forEach(benchmarks => {
+    benchmarks.forEach(b => {
+      b.i = b2i[b.name]
+    })
+    benchmarks.sort((a, b) => a.i - b.i)
+  })
+
+  benchmarks = variants[0]
+  bs = benchmarks.slice()
+  // bs.sort((a, b) => a.i - b.i)
+
+  // console.log(bs)
+  bs = bs.slice(0, 10)
+  let chart = body.append('div').attr('class', 'chart')
+
+  variants.forEach(v => plotBenchmarks(chart[0][0], v))
+  // variants.forEach(v => plotBenchmarks(chart[0][0], v.slice(0,100)))
+  // variants.forEach(v => plotOutliers(chart[0][0], v))
+  // variants.forEach(v => plotSeries(chart[0][0], v))
+  // plotSeriesOutliers(chart[0][0], [].concat(...variants))
 
   let buckets = benchmarks.groupBy('num_samples')
-  bs = buckets
-
-  body.selectAll('table').data(Object.entries(buckets)).enter()
+  // bs = [Object.entries(buckets)[8]]
+  bs = []
+  // body.selectAll('table').data(Object.entries(buckets)).enter()
+  body.selectAll('table').data(bs).enter()
     .append('table')
     .each(function([num_samples, benchmarks]) {
       let table = d3.select(this)
-      table.append('caption').append('div').attr('class', 'caption')
-        .append('h2').text(num_samples)
+      let chart = d3.select(this.parentNode)
+        .insert('div', 'table').attr('class', 'chart')
+      plotBenchmarks(chart[0][0], benchmarks)
+
+      let div = table.append('caption').append('div').attr('class', 'caption')
+      div.append('h2').text(num_samples)
       let thead = table.append('thead')
       let tbody = table.append('tbody')
       let rows = tbody.selectAll('tr').data(benchmarks).enter().append('tr')
@@ -244,7 +333,6 @@ function sortRowsByColumn(rows) {
   }
 }
 
-
 const noOverhead = [0, 0]
 function setupOverhead(benchmark) {
   iqr = benchmark.all.clean.iqr
@@ -252,11 +340,455 @@ function setupOverhead(benchmark) {
   let [setup, ratio, _] = benchmark.setup_overhead
   return `${round(ratio*100)}% (${setup}µs)`
 }
-  // } else if (i === 1) { // setup overhead, 2nd cell
-  // if (value && value[0] !== 0) {
-  //   [setup, ratio] = value
-  //   td.text(`${setup}µs (${round(ratio*100, 1)}%)`)
-  // }
+
+const join = (d1, d2) => Object.assign(Object.assign({}, d1), d2)
+const systemFont = {family: 'system-ui, -apple-system', size: 10}
+const labelFont = join(systemFont, {color: 'rgba(0, 0, 0, 0.4)'})
+const noModeBar = {displayModeBar: false,}
+
+
+const time = (f, label=f.name) => {
+  let t0 = performance.now()
+  let result = f()
+  let t1 = performance.now()
+  // console.log(`${label}: ${t1 - t0}  ms`)
+  return result
+}
+
+let unicorns = [ // Benchmarks with issues
+
+  // ~30k microsecond outlier in very first sample
+  'ObjectiveCBridgeStubToNSStringRef',
+  'ObjectiveCBridgeStubFromNSStringRef',
+  'ObjectiveCBridgeStubFromNSString',
+  'ObjectiveCBridgeStubToNSString',
+  'ObjectiveCBridgeStubFromNSDate',
+  'ObjectiveCBridgeStubToNSDateRef',
+  'ObjectiveCBridgeStubFromNSDateRef',
+  'ObjectiveCBridgeStubToNSDate',
+  'ObjectiveCBridgeStubFromArrayOfNSString',
+  'ObjectiveCBridgeStubToArrayOfNSString',
+  // 565
+  'ObjectiveCBridgeStubNSDateRefAccess', // bimodal
+]
+const setNameTrue = (m, name) => {m[name] = true; return m}
+let uniMap = unicorns.reduce(setNameTrue, {})
+const isUnicorn = b => uniMap[b.name]
+
+
+const i1 = s => num_iters(s) == 1
+const toError = max => o => o - max
+const toSeriesError = s => s.outliers.map(toError(s.max))
+const inRange = (a, b) => c => a <= c && c < b
+const errorWithin = (a, b) => s => toSeriesError(s).some(inRange(a, b))
+const roundRange = r => round(r)
+const icss = s => round(s.ics / ((s.count * s.mean) / 1000000)) // ICS/second
+
+function plotSeries(chart, benchmarks) {
+  console.log([].concat(...benchmarks.filter(b => b.name !== 'TypeFlood')
+        .map(b => [].concat(...b.clean.filter(i1).filter(s => icss(s) > 2000)
+            .map(s => `${b.name} ${s.name} icss:${icss(s)} ICS:${s.ics}`)
+      )))
+  )
+
+  let data = [{
+    name: `${benchmarks[0].variant} ICS`, type: 'histogram',
+    xbins: {start: 0, end: 1000, size: 4,}, opacity: 0.4,
+    x: [].concat(...benchmarks.filter(b => b.name !== 'TypeFlood')
+      .map(b => [].concat(...b.raw.filter(i1).map(icss)))),
+  }]
+  let layout = { barmode: "overlay", xaxis: {range: [0, 1000]}, }
+
+  let plot = !chart.layout
+    ? Plotly.newPlot(chart, data, layout)
+    : Plotly.addTraces(chart, data)
+  return plot
+}
+
+function plotSeriesOutliers(chart, benchmarks) {
+
+  let series = [].concat(
+    ...benchmarks
+    // .filter(not(isUnicorn))
+    // .filter(b => !hasOverhead[b.name])
+    .map(b => b.clean.filter(i1)
+        // .filter(errorWithin(10000,10090))
+  ))
+
+
+  const icsBin = (s) => {
+    return {icsBin: Math.min(Math.floor(icss(s) / 256), 4), s}
+  }
+  let binnedSeries = series.map(icsBin).groupBy('icsBin')
+  console.log(binnedSeries)
+  // console.log(series)
+
+  const traceErrors = (series, name) => {
+    let errors = [].concat(...series.map(toSeriesError))
+    return {
+      name, opacity: 0.4,
+      type: 'histogram', histfunc: 'sum', hoverinfo:'x+y',
+      x: errors,
+      y: errors,
+      xbins: {
+        start: 0,
+        end: 1000, size: 2,
+        // end: 4500, size: 9,
+        // end: 60000, size: 120,
+        // end: 100000, size: 200,
+        // end: 600000, size: 1200,
+       },
+    }
+  }
+
+  console.log(Object.entries(binnedSeries));
+  let data = Object.entries(binnedSeries).map(
+    ([icsBin, wrappedSeries]) => traceErrors(wrappedSeries.map(({_, s}) => s), icsBin))
+
+  let layout = {
+    // barmode: "stack",
+    barmode: "overlay",
+    xaxis: {range: [0, 1000]}, yaxis: {range: [0, 240000]}, // 1k
+    // xaxis: {range: [0, 4500]}, yaxis: {range: [0, 240000]}, // 4.5k
+    // xaxis: {range: [0, 60000]}, yaxis: {range: [0, 3000000]}, // 60k
+    // xaxis: {range: [0, 100000]}, yaxis: {range: [0, 8000000]},  // 100k
+    // xaxis: {range: [0, 600000]}, yaxis: {range: [0, 22000000]}, // all
+  }
+
+  var plot = !chart.layout
+  ? Plotly.newPlot(chart, data, layout)
+  : Plotly.addTraces(chart, data)
+
+  return plot
+}
+
+function plotOutliers(chart, benchmarks) {
+  let errors = [].concat(
+    ...benchmarks
+    // .filter(not(isUnicorn))
+    // .filter(b => !hasOverhead[b.name])
+    .map(b =>
+      [].concat(
+        ...b.clean
+        .filter(i1)
+        // .filter(errorWithin(10000,10090))
+        .map(toSeriesError)
+  )))
+
+  const sum = (a, c) => a + c
+  let ics = benchmarks.map(b => b.clean.filter(i1).map(s => s.ics)
+    .reduce(sum, 0)).reduce(sum, 0)
+  let numOutliers = benchmarks.map(b => b.clean.filter(i1).map(s => s.outliers.length)
+    .reduce(sum, 0)).reduce(sum, 0)
+  let numSamples = benchmarks.map(b => b.raw.filter(i1).map(s => s.count)
+    .reduce(sum, 0)).reduce(sum, 0)
+
+  console.log(`${benchmarks[0].variant} Errors, ICS: ${ics}, ${numOutliers} outliers of ${numSamples} samples (${round(numOutliers/numSamples*100)}%)`);
+
+  let data = [{
+    name: `${benchmarks[0].variant} Errors, ICS: ${ics}`,
+    // name: `${benchmarks[0].variant} Errors, ICS: ${ics}, ${numOutliers} ${round(numSamples/numOutliers*100)}%`,
+    type: 'histogram', hoverinfo:'x+y',
+    histfunc: 'sum',
+    // histnorm: 'probability',
+    x: errors,
+    y: errors,
+    xbins: {
+      start: 0,
+      end: 1000, size: 2,
+      // end: 4500, size: 9,
+      // end: 60000, size: 120,
+      // end: 100000, size: 200,
+      // end: 600000, size: 1200,
+     },
+    opacity: 0.4,
+  }]
+
+  let layout = {
+    dragmode: "select",
+    barmode: "overlay",
+    xaxis: {range: [0, 1000]}, yaxis: {range: [0, 240000]}, // 1k
+    // xaxis: {range: [0, 4500]}, yaxis: {range: [0, 240000]}, // 4.5k
+    // xaxis: {range: [0, 60000]}, yaxis: {range: [0, 3000000]}, // 60k
+    // xaxis: {range: [0, 100000]}, yaxis: {range: [0, 8000000]},  // 100k
+    // xaxis: {range: [0, 600000]}, yaxis: {range: [0, 22000000]}, // all
+  }
+
+  var plot
+  if (!chart.layout) {
+    plot = Plotly.newPlot(chart, data, layout)
+  } else {
+    plot =  Plotly.addTraces(chart, data)
+  }
+
+  // Box selection handler
+  chart.on('plotly_selected', function(eventData) {
+    let seriesWithErrorsWithingRange = [].concat(
+      ...benchmarks
+      // .filter(not(isUnicorn))
+      .map(b =>
+        [].concat(
+          ...b.clean
+          .filter(i1)
+          .filter(errorWithin(...eventData.range.x.map(roundRange)))
+          .map(s =>
+            `${b.variant} ${b.name} ${s.name} ${s.median} ${s.ics} ${toSeriesError(s).filter(inRange(...eventData.range.x.map(roundRange))).length}`)
+    )))
+    console.log(seriesWithErrorsWithingRange)
+  })
+  return plot
+}
+
+
+function plotBenchmarks(chart, benchmarks) {
+  let range = [30, -1]
+
+  let layout = { // layout
+    boxgap: .25,
+    boxgroupgap: 0,
+    boxmode: 'group',
+    dragmode: 'pan',
+    legend: {x: -.1, y: 1.05, orientation: 'h',}, showlegend: true,
+    yaxis: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
+      range,
+      boxmode: 'grouped',
+    },
+    yaxis2: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
+      overlaying: 'y', side: 'right', zeroline: false, showgrid: false,
+      range,
+      tickvals: [...Array(bs.length).keys()],
+      ticktext: bs.map(b => b.name),
+    },
+    xaxis: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
+      range: [0.75, 2],
+      // range: [600, 2400],
+      type: 'log', //exponentformat: 'power',
+    },
+    hoverlabel: {font: systemFont},
+    // hovermode: 'closest',
+    hovermode: '',
+    margin: { l: 2 + 40 * 7, r: 3, b: 25, t: 5, pad: 2},
+  }
+
+
+  const traces = (benchmarks) => {
+    let t = [ // data
+      time((() => traceCleanBoxPlot(benchmarks)), `traceCleanBoxPlot ${benchmarks[0].variant}`),
+      // traceRawMeans(benchmarks),
+      // ...time(() => benchmarks.map(trace5percentRange), `trace5percentRange ${benchmarks[0].variant}`),
+      // ...time(() => benchmarks.map(traceRawMeansScatter), `traceRawMeansScatter ${benchmarks[0].variant}`),
+    ]
+    return t
+  }
+
+  if (!chart.layout) {
+    Plotly.newPlot(chart,
+      // traces(benchmarks),
+      time(() => traces(benchmarks), `traces ${benchmarks[0].variant}`),
+      layout,
+      // noModeBar
+    )
+    chart.on('plotly_afterplot', fixDimensions(chart))
+
+    // Without this the Autoscale button gets the y and y2 out of sync.
+    chart.on('plotly_afterplot', synchronizeAxisRange)
+  } else {
+    Plotly.addTraces(chart,
+      // traces(benchmarks)
+      time(() => traces(benchmarks), `traces ${benchmarks[0].variant}`)
+    )
+  }
+
+
+  const isEqual = (a1, a2) =>
+    a1.length===a2.length && a1.every((v,i)=> v === a2[i])
+
+  function synchronizeAxisRange() {
+  	let l = chart.layout
+  	let r = l.yaxis.range.map(r => round(r, 3))
+  	const setRange = (axis, r) => { axis.autorange = false; axis.range = r }
+  	if (!isEqual(r, l.yaxis2.range)) {
+  		setRange(l.yaxis, r)
+  		setRange(l.yaxis2, r)
+  		Plotly.relayout(chart, l)
+    }
+  }
+}
+
+const fixDimensions = (plot) => () => fixRelativeDimensions(plot)
+
+function fixRelativeDimensions(e) {
+  Plotly.d3.select(e).select('.plot-container').style('height', '100%')
+  let plot = Plotly.d3.select(e).select('.svg-container')
+  plot.style('height', '100%').style('width', null)
+  plot.selectAll('.main-svg').attr('height', '100%').attr('width', '100%')
+}
+
+/// Window resizing
+windowWidth = window.innerWidth
+function resizeMainCharts() {
+  if (windowWidth === window.innerWidth) return
+  windowWidth = window.innerWidth
+  Plotly.Plots.resize(document.getElementsByClassName('chart')[0])
+}
+
+(function() {
+  window.addEventListener("resize", resizeThrottler, false);
+  var resizeTimeout;
+  function resizeThrottler() {
+    // ignore resize events as long as an handler execution is in the queue
+    if ( !resizeTimeout ) {
+      resizeTimeout = setTimeout(function() {
+        resizeTimeout = null;
+        resizeMainCharts();
+     }, 1000) // at most once per second
+    }
+  }
+}());
+
+const tif = s => s.median + round(1.5 * s.iqr)
+
+const colors = [
+  'rgb(215, 2, 6)', 'rgb(240, 91, 79)', 'rgb(244, 198, 62)',
+  'rgb(209, 121, 5)', 'rgb(69, 61, 63)', 'rgb(89, 146, 43)',
+  'rgb(5, 68, 211)', 'rgb(107, 3, 146)', 'rgb(240, 91, 79)',
+  'rgb(221, 164, 88)', 'rgb(234, 207, 125)', 'rgb(134, 121, 125)',
+  'rgb(178, 195, 38)', 'rgb(97, 136, 226)']
+const highlightBlue = 'rgb(58, 153, 250)'
+const rgba = (color, opacity) => `rgba${color.slice(3, -1)}, ${opacity})`
+
+const ColorCache = (palette, c={}) => new Proxy(c, {
+  get: function(cache, key) {
+    return cache[key] || this.nextColorFor(key, cache)
+  },
+  palette,
+  nextColorFor: (key, cache) => {
+    let c = palette[Object.keys(cache).length % palette.length]
+    cache[key] = c
+    return c
+  }
+})
+
+let cleanColor = ColorCache(colors.slice(5))
+let scatterColor = ColorCache(colors.slice(5))//.map(c => rgba(c, .8)))
+let errorColor = ColorCache(colors.map(c => rgba(c, .5)))
+
+const boxplot5numSummary = s =>
+  [s.min, s.q1, s.median, s.median, s.q3, Math.min(s.max, tif(s))]
+
+
+function traceCleanBoxPlot(bms) {
+  return {
+    name: `${bms[0].variant} Clean`,
+    x : [].concat(...bms.map(
+      b => boxplot5numSummary(b.all.fixed || b.all.clean))),
+    // y: [].concat(...bms.map(b => Array(6).fill(b.name))),
+    y: [].concat(...bms.map(b => Array(6).fill(
+      b.name + (b.all.fixed ? '*' : '') ))),
+    type: 'box', opacity: 0.5,
+    boxpoints: false,
+    orientation: 'h',
+    // boxpoints: 'all',
+    // pointpos: -2,
+    // jitter: 1,
+    // marker: { color: bms[0].variant === 'ten' ? highlightBlue : 'rgba(107, 3, 146, .5)'},
+    marker: { color: cleanColor[bms[0].variant]},
+    line : { width: 1.4}
+  }}
+
+function correctedMeans(b) {
+  let overhead = b.setup_overhead ? b.setup_overhead[0] : 0
+  return b.raw.map(s => s.mean - round(overhead / num_iters(s)))
+}
+
+function traceRawMeans(bms) {
+return {
+    name: `${bms[0].variant} Raw Means`,
+    type: 'box', opacity: 0.5,
+    // colorscale: 'Portland', cmin: 100, cmax: 1000, showscale: true, // FIXME
+    x: [].concat(...bms.map(correctedMeans)),
+    y: [].concat(...bms.map(b => Array(b.raw.length).fill(b.name))),
+    text: [].concat(...bms.map(b => b.raw.map(s => s.ics + ' ICS'))),
+    jitter: 1,
+    // pointpos: 0,
+    pointpos: 2,
+    // pointpos: -2,
+    orientation: 'h',
+
+    marker: {
+      color: cleanColor[bms[0].variant],
+      // color: 'rgb(7,40,89,.5)',
+    },
+    // fillcolor: 'rgba(0,0,0,0)',
+    // line: {color: 'rgba(0,0,0,.2)', },
+    line: { width: 0},
+    boxpoints: false,
+    // boxpoints: 'all',
+  }}
+
+const ys = (b) => Array(b.raw.length).fill(b.i)
+
+// repeatable pseudorandom generator from
+// https://github.com/plotly/plotly.js/blob/master/src/traces/box/plot.js
+var randSeed = 2000000000;
+function rand() {
+  var lastVal = randSeed;
+  randSeed = (69069 * randSeed + 1) % 4294967296;
+  // don't let consecutive vals be too close together
+  // gets away from really trying to be random, in favor of better local uniformity
+  if(Math.abs(randSeed - lastVal) < 429496729) return rand();
+  return randSeed / 4294967296;
+}
+
+// jitter between 0.3 and 0.7 to stay in lane between boxplots w/o overlap
+const jitter = (x) => x + 0.245 + round(rand() * 0.491, 3)
+// Colorcoded point
+function traceRawMeansScatter(b) {
+	return {
+		name: b.name,
+		x: correctedMeans(b),
+		y: ys(b).map(jitter),
+		yaxis: 'y2',
+		type: 'scatter',
+		mode: 'markers',
+		opacity: 0.7,
+    hoverinfo: 'all',//'x+y+text',
+		marker: {
+      // showscale: true,
+      size: 5,
+			colorscale: 'Portland', cmin: 100, cmax: 1000,
+			color: b.raw.map(s => s.ics),
+      line: {
+        color: scatterColor[b.variant],
+        width: 1,},
+		},
+		text: b.raw.map(s => `${s.ics} ICS ${b.variant}`),
+		showlegend: false,
+	}
+}
+
+function trace5percentRange(b) {
+  const fivePercentRange = b => {
+    let minMean = Math.min(...correctedMeans(b))
+    return [-.05, 0.05].map(f => minMean + (minMean * f))
+  }
+  return {
+		name: b.name,
+		x: fivePercentRange(b),
+		y: Array(2).fill(b.i + .5),
+		yaxis: 'y2',
+		type: 'scatter',
+		mode: 'lines',
+		opacity: 0.2,
+    hoverinfo: 'x+text',
+		marker: {
+      color: b.variant ==='ten' ? 'red' : 'orange',
+      line: {color: errorColor[b.variant], width: 15,},
+		},
+		text: '5% range',
+		showlegend: false,
+	}
+}
 
 </script>
   </body>
