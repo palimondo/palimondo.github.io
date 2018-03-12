@@ -77,7 +77,8 @@ function getParam(name, defaultValue='') {
 }
 
 function getParams(name) {
-  return (new URLSearchParams(location.search)).getAll(name)
+  return [].concat(...(new URLSearchParams(location.search)).getAll(name)
+    .map(v => v.split(' ')))
 }
 
 function updateParam(name, value) {
@@ -131,10 +132,6 @@ const Stats = (s) => new Proxy(s, {
     return obj[prop] || s[seriesKeys[prop]]
   }})
 
-const emptyStats = (() => { // 🖕 TypeFlood
-  let e = Array(seriesKeys.length).fill(''); e[0] = 'all'; return e
-})()
-
 const allSeries = s => s.name === 'all'
 const not = f => (p) => !f(p)
 
@@ -150,8 +147,8 @@ const fetchBenchmarkStats = (variant) =>
         raw = b.rawStats.map(Stats)
         clean = b.cleanStats.map(Stats)
         b.all = {
-          raw: raw.filter(allSeries)[0] || emptyStats,
-          clean: clean.filter(allSeries)[0] || emptyStats,
+          raw: raw.filter(allSeries)[0],
+          clean: clean.filter(allSeries)[0],
         }
         b.raw = raw.filter(not(allSeries))
         b.clean = clean.filter(not(allSeries))
@@ -204,19 +201,22 @@ Promise.all(variants.map(fetchBenchmarkStats))
     })
   })
 
-  const orderBernchmarks = (variants, stat) => {
-    let b2q1 = {}
+  const orderBernchmarks = (variants, value) => {
     let benchmarks = [].concat(...variants)
-    benchmarks.forEach(b => {
-      b2q1[b.name] = Math.min((b2q1[b.name] || Number.MAX_VALUE),
-        (b.all.fixed || b.all.clean)[stat])
-    })
+    const storeMinimum = (map, b) => {
+      map[b.name] = Math.min(
+      (map[b.name] || Number.MAX_VALUE), // minimum so far
+      value(b))
+      return map
+    }
+    let b2q1 = benchmarks.reduce(storeMinimum, {})
     let orderedNames = Object.keys(b2q1).sort((a, b) => b2q1[a] - b2q1[b])
-    let b2i = {}
-    orderedNames.forEach((name, i) => { b2i[name] = i })
-    return b2i
+    const storeIndex = (map, b, i) => { map[b] = i; return map }
+    return orderedNames.reduce(storeIndex, {})
   }
-  let b2i = orderBernchmarks(variants, 'q1')
+  let b2i = orderBernchmarks(variants,
+    b => (b.all.fixed || b.all.clean)['q1'])
+    // b => Math.min(...pages(b)))
 
   variants.forEach(benchmarks => {
     benchmarks.forEach(b => {
@@ -225,7 +225,7 @@ Promise.all(variants.map(fetchBenchmarkStats))
     benchmarks.sort((a, b) => a.i - b.i)
   })
 
-  benchmarks = variants[0]
+  benchmarks = [].concat(...variants)
   bs = benchmarks.slice()
   // bs.sort((a, b) => a.i - b.i)
 
@@ -239,7 +239,7 @@ Promise.all(variants.map(fetchBenchmarkStats))
   // variants.forEach(v => plotSeries(chart[0][0], v))
   // plotSeriesOutliers(chart[0][0], [].concat(...variants))
 
-  let buckets = benchmarks.groupBy('num_samples')
+  // let buckets = benchmarks.groupBy('num_samples')
   // bs = [Object.entries(buckets)[8]]
   bs = []
   // body.selectAll('table').data(Object.entries(buckets)).enter()
@@ -385,6 +385,7 @@ const roundRange = r => round(r)
 const icss = s => round(s.ics / ((s.count * s.mean) / 1000000)) // ICS/second
 
 function plotSeries(chart, benchmarks) {
+  // TypeFlood's goes to zero... makes little sense to work with it
   console.log([].concat(...benchmarks.filter(b => b.name !== 'TypeFlood')
         .map(b => [].concat(...b.clean.filter(i1).filter(s => icss(s) > 2000)
             .map(s => `${b.name} ${s.name} icss:${icss(s)} ICS:${s.ics}`)
@@ -540,8 +541,10 @@ function plotOutliers(chart, benchmarks) {
 }
 
 
+var homeRange = {x: [0.75, 2], y: [30, -1]}
+
 function plotBenchmarks(chart, benchmarks) {
-  let range = [30, -1]
+  // let range = [30, -1]
 
   let layout = { // layout
     boxgap: .25,
@@ -550,19 +553,20 @@ function plotBenchmarks(chart, benchmarks) {
     dragmode: 'pan',
     legend: {x: -.1, y: 1.05, orientation: 'h',}, showlegend: true,
     yaxis: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
-      range,
+      range: defaultRange('y'),
       boxmode: 'grouped',
     },
     yaxis2: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
       overlaying: 'y', side: 'right', zeroline: false, showgrid: false,
-      range,
+      range: defaultRange('y'),
       tickvals: [...Array(bs.length).keys()],
       ticktext: bs.map(b => b.name),
     },
     xaxis: { tickfont: labelFont, zeroline: false, hoverformat: '.0f',
-      range: [0.75, 2],
+      range: defaultRange('x'),// [0.75, 2],
       // range: [600, 2400],
       type: 'log', //exponentformat: 'power',
+      // type: 'linear',
     },
     hoverlabel: {font: systemFont},
     // hovermode: 'closest',
@@ -574,6 +578,8 @@ function plotBenchmarks(chart, benchmarks) {
   const traces = (benchmarks) => {
     let t = [ // data
       time((() => traceCleanBoxPlot(benchmarks)), `traceCleanBoxPlot ${benchmarks[0].variant}`),
+      // time((() => traceAproximatedAllBoxPlot(benchmarks)), `traceAproximatedAllBoxPlot ${benchmarks[0].variant}`),
+      // time((() => traceMemoryBoxPlot(benchmarks)), `traceMemoryBoxPlot ${benchmarks[0].variant}`),
       // traceRawMeans(benchmarks),
       // ...time(() => benchmarks.map(trace5percentRange), `trace5percentRange ${benchmarks[0].variant}`),
       // ...time(() => benchmarks.map(traceRawMeansScatter), `traceRawMeansScatter ${benchmarks[0].variant}`),
@@ -592,6 +598,7 @@ function plotBenchmarks(chart, benchmarks) {
 
     // Without this the Autoscale button gets the y and y2 out of sync.
     chart.on('plotly_afterplot', synchronizeAxisRange)
+    chart.on('plotly_afterplot', synchronizeZoom)
   } else {
     Plotly.addTraces(chart,
       // traces(benchmarks)
@@ -613,6 +620,23 @@ function plotBenchmarks(chart, benchmarks) {
   		Plotly.relayout(chart, l)
     }
   }
+
+  // FIXME what are the right settings for logatithmic axis?
+  const roundRange = r => r > 500 ? round(r) : round(r, 1)
+
+  function synchronizeZoom() {
+    let rx = chart.layout.xaxis.range.map(roundRange)
+    updateParam('rx',
+      isEqual(rx, homeRange.x) ? null : rx[0] + ' ' + rx[1])
+    let ry = chart.layout.yaxis.range.map(roundRange)
+    updateParam('ry',
+      isEqual(ry, homeRange.y) ? null : ry[0] + ' ' + ry[1])
+  }
+}
+
+function defaultRange(axis) {
+  let r = getParam('r' + axis, null)
+  return r ? r.split(' ').map(parseFloat) : homeRange[axis].slice()
 }
 
 const fixDimensions = (plot) => () => fixRelativeDimensions(plot)
@@ -646,7 +670,7 @@ function resizeMainCharts() {
   }
 }());
 
-const tif = s => s.median + round(1.5 * s.iqr)
+const tif = s => s.q3 + round(1.5 * s.iqr)
 
 const colors = [
   'rgb(215, 2, 6)', 'rgb(240, 91, 79)', 'rgb(244, 198, 62)',
@@ -674,31 +698,91 @@ let scatterColor = ColorCache(colors.slice(5))//.map(c => rgba(c, .8)))
 let errorColor = ColorCache(colors.map(c => rgba(c, .5)))
 
 const boxplot5numSummary = s =>
-  [s.min, s.q1, s.median, s.median, s.q3, Math.min(s.max, tif(s))]
-
+  // [s.min, s.q1, s.median, s.median, s.q3, Math.min(s.max, tif(s))]
+  [s.min, s.q1, s.median, s.median, s.q3, s.max]
 
 function traceCleanBoxPlot(bms) {
   return {
     name: `${bms[0].variant} Clean`,
     x : [].concat(...bms.map(
       b => boxplot5numSummary(b.all.fixed || b.all.clean))),
-    // y: [].concat(...bms.map(b => Array(6).fill(b.name))),
-    y: [].concat(...bms.map(b => Array(6).fill(
-      b.name + (b.all.fixed ? '*' : '') ))),
-    type: 'box', opacity: 0.5,
-    boxpoints: false,
-    orientation: 'h',
-    // boxpoints: 'all',
-    // pointpos: -2,
-    // jitter: 1,
-    // marker: { color: bms[0].variant === 'ten' ? highlightBlue : 'rgba(107, 3, 146, .5)'},
+    y: [].concat(...bms.map(namesFor5numSummary)),
+    type: 'box', boxpoints: false, orientation: 'h', opacity: 0.5,
+    // boxpoints: 'all', pointpos: -2, jitter: 1,
     marker: { color: cleanColor[bms[0].variant]},
     line : { width: 1.4}
   }}
 
+const pageSize = 4096
+// Number of pages used when running no benchmarks
+// Measured on 50 runs, for Benchmark_O is min: 2424 max: 2447
+// TypeFlood that reduces to NOOP has min 113 pages, which means that is the
+// minimum ovehead of the measurement infrastructure (that is 0.44 MB)
+const baselinePages = 2434 + 113
+// const pages = b => b.raw.map(s => (s.max_rss / pageSize) - baselinePages)
+// const pages = b => b.raw.map(s => (s.max_rss) - (baselinePages * pageSize))
+const pages = b => b.raw.map(s => (s.max_rss))
+
+function traceMemoryBoxPlot(bms) {
+  return {
+    name: `${bms[0].variant} Clean`,
+    x: [].concat(...bms.map(pages)),
+    y: [].concat(...bms.map(benchmarkNameForSeries)),
+    type: 'box', orientation: 'h', opacity: 0.5,
+    boxpoints: 'all', pointpos: -2, jitter: 1,
+    // boxpoints: 'suspectedoutliers', //pointpos: -2, jitter: 1,
+    marker: { color: cleanColor[bms[0].variant]},
+    line : { width: 1.4}
+  }}
+
+const ascending = (a,b) => a - b
+
+function computeStats(a) { // assumes `a` is sorted ascending
+  let n = a.length
+  Q2 = Math.floor(n / 2); Q1 = Math.floor(n / 4); Q3 = Q2 + Q1
+  return { min: a[0], q1: a[Q1], median: a[Q2], q3: a[Q3], max:a[n - 1] }
+}
+
+const summaryValues = s => [s.min, s.q1, s.median, s.q3, s.max]
+
+function correctedValues(b) {
+  const correction = correctionFor(b)
+  return b.clean.map(s => summaryValues(s).map(v => v - correction(s)))
+}
+
+const namesFor5numSummary = (b) =>
+  Array(6).fill(b.name + (hasOverhead[b.name] ? '*' : ''))
+
+const benchmarkNameForSeries = (b) =>
+  Array(b.raw.length).fill(b.name + (hasOverhead[b.name] ? '*' : ''))
+
+const approxAll = b => computeStats(
+  [].concat(...correctedValues(b)).sort(ascending))
+
+// Compute the `all` series approximation from the individual series
+// 5num summaries to see how it compares to real deal.
+// Key question is how much key information is lost during the
+// compression into the 5num summary for each series.
+function traceAproximatedAllBoxPlot(bms) {
+  return {
+    name: `${bms[0].variant} Approx`,
+    x: [].concat(...bms.map(approxAll).map(boxplot5numSummary)),
+    y: [].concat(...bms.map(namesFor5numSummary)),
+    type: 'box', boxpoints: false, orientation: 'h', opacity: 0.5,
+    marker: { color: errorColor[bms[0].variant]},
+    line : { width: 1.4}
+  }}
+
+function correctionFor(b) {
+  let overhead = hasOverhead[b.name] ? b.setup_overhead[0] : 0
+  return overhead
+    ?  (s) => round(overhead / num_iters(s))
+    :  (_) => 0
+}
+
 function correctedMeans(b) {
-  let overhead = b.setup_overhead ? b.setup_overhead[0] : 0
-  return b.raw.map(s => s.mean - round(overhead / num_iters(s)))
+  const correction = correctionFor(b)
+  return b.raw.map(s => s.mean - correction(s))
 }
 
 function traceRawMeans(bms) {
@@ -717,10 +801,7 @@ return {
 
     marker: {
       color: cleanColor[bms[0].variant],
-      // color: 'rgb(7,40,89,.5)',
     },
-    // fillcolor: 'rgba(0,0,0,0)',
-    // line: {color: 'rgba(0,0,0,.2)', },
     line: { width: 0},
     boxpoints: false,
     // boxpoints: 'all',
