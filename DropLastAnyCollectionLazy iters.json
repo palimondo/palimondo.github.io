@@ -1,1 +1,0 @@
-{"series":[{"data":[163472,126714,133597,116726,117188,112635,111285,113799],"name":"DropLastAnyCollectionLazy i1","num_iters":1},{"data":[118141,109378],"name":"DropLastAnyCollectionLazy i4","num_iters":4},{"data":[114595,110540,110921,110299],"name":"DropLastAnyCollectionLazy i2","num_iters":2}],"type":"num_iters","name":"DropLastAnyCollectionLazy"}

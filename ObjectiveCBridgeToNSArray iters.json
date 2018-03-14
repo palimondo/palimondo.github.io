@@ -1,1 +1,0 @@
-{"series":[{"data":[110462,110154,112485,111758,110070,110620,109456,109306],"name":"ObjectiveCBridgeToNSArray i1","num_iters":1},{"data":[107287,107704],"name":"ObjectiveCBridgeToNSArray i4","num_iters":4},{"data":[105272,106996,107798,107241],"name":"ObjectiveCBridgeToNSArray i2","num_iters":2}],"type":"num_iters","name":"ObjectiveCBridgeToNSArray"}

@@ -1,1 +1,0 @@
-{"series":[{"data":[123498,123002],"name":"MonteCarloPi i4","num_iters":4},{"data":[122738,122786,122792,122850,123124,122743,123037,123710],"name":"MonteCarloPi i1","num_iters":1},{"data":[122804,122923,122864,122736],"name":"MonteCarloPi i2","num_iters":2}],"type":"num_iters","name":"MonteCarloPi"}

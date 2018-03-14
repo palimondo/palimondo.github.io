@@ -1,1 +1,0 @@
-{"series":[{"data":[108800,110062],"name":"SuffixAnyCollectionLazy i4","num_iters":4},{"data":[109861,109377,107945,109545],"name":"SuffixAnyCollectionLazy i2","num_iters":2},{"data":[113084,112822,113748,111765,108661,108850,106842,121370],"name":"SuffixAnyCollectionLazy i1","num_iters":1}],"type":"num_iters","name":"SuffixAnyCollectionLazy"}
