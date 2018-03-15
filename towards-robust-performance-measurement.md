@@ -101,7 +101,7 @@ Let’s first examine one fairly typical benchmark.
 TK
 [1](chart.html?f=ArrayLiteral+iters.json)
 
-<iframe src="http://palimondo.github.com/chart.html?f=ArrayLiteral+iters.json&hide=navigation+plots" name="ArrayLiteral+iters" frameborder="0" width="100%" height="640"></iframe>
+<iframe src="chart.html?f=ArrayLiteral+iters.json&hide=navigation+plots" name="ArrayLiteral+iters" frameborder="0" width="100%" height="640"></iframe>
 
 All ten series in the chart above represent ~1s of timing benchmark [`ArrayLiteral`](https://github.com/apple/swift/blob/master/benchmark/single-source/ArrayLiteral.swift), with varying number of iterations (denoted by `i#` in the series’ name). This results in progressively less samples (`n` in the table) as the number of iterations averaged in the reported time increases.
 
