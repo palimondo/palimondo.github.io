@@ -1,0 +1,1 @@
+{"series":[{"name":"ObjectiveCBridgeToNSDictionary i2","voluntary_cs":0,"max_rss":10604544,"data":[238926,231457],"involuntary_cs":462,"num_iters":2},{"name":"ObjectiveCBridgeToNSDictionary i1","voluntary_cs":0,"max_rss":10596352,"data":[244480,245617,237457,241797],"involuntary_cs":1037,"num_iters":1}],"type":"num_iters","name":"ObjectiveCBridgeToNSDictionary"}

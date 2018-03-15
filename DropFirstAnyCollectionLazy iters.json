@@ -1,0 +1,1 @@
+{"series":[{"name":"DropFirstAnyCollectionLazy i2","voluntary_cs":0,"max_rss":10649600,"data":[333445,331803],"involuntary_cs":1241,"num_iters":2},{"name":"DropFirstAnyCollectionLazy i1","voluntary_cs":0,"max_rss":10641408,"data":[342533,335454,333571,373415],"involuntary_cs":1327,"num_iters":1}],"type":"num_iters","name":"DropFirstAnyCollectionLazy"}

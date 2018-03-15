@@ -1,0 +1,1 @@
+{"series":[{"name":"ObjectiveCBridgeFromNSSetAnyObject i2","voluntary_cs":0,"max_rss":10645504,"data":[275346,273881],"involuntary_cs":543,"num_iters":2},{"name":"ObjectiveCBridgeFromNSSetAnyObject i1","voluntary_cs":0,"max_rss":10670080,"data":[277223,273448,276534,276891],"involuntary_cs":752,"num_iters":1}],"type":"num_iters","name":"ObjectiveCBridgeFromNSSetAnyObject"}
