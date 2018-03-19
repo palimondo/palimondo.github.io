@@ -68,12 +68,16 @@
       .navigation select, .navigation button { background: transparent; border: none; -webkit-appearance: none;}
       .navigation > button:last-of-type:after {content: '\25be'; padding: 0; margin: 0; position: absolute; left: 2.9em; top: 0; z-index: -1;}
       .navigation h1 {display: inline;}
+      .series .navigation {position: relative;}
+      .series .navigation select { width: 5rem; height: 1.8rem; padding: 0; margin: 0 -4.4rem 0 0;}
+      .series .navigation:before {content: '\25be'; margin: 0; position: absolute; left: 0.2rem; z-index: -1; font-size: 200%; color: rgb(58, 153, 250);}
 
       .hide {display: none !important; flex-basis: 0% !important}
       .hide.navigation {display: block !important}
       .hide > button, .hide > select { display: none !important }
       .hide.stats {display: table-row-group !important}
       .hide.stats tr:not(.selected) {display: none}
+      .series .hide.navigation:before {content: none;}
 
       #chart {flex: 1 1 50%}
       aside {flex: 1 1 50%}
@@ -128,6 +132,9 @@
           <table id="series" class="ct-label">
             <caption>
               <div class='caption'>
+                <form class="ct-label navigation">
+                  <select id="variant" name="v" onchange="selectVariant(this)"></select>
+                </form>
                 <h2 id="seriesTitle">Series</h2>
                 <form class="ct-label">
                   <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
@@ -235,10 +242,11 @@ const colors = [
   'rgb(209, 121, 5)', 'rgb(69, 61, 63)', 'rgb(89, 146, 43)',
   'rgb(5, 68, 211)', 'rgb(107, 3, 146)', 'rgb(240, 91, 79)',
   'rgb(221, 164, 88)', 'rgb(234, 207, 125)', 'rgb(134, 121, 125)',
-  'rgb(178, 195, 38)', 'rgb(97, 136, 226)']
+  'rgb(178, 195, 38)', 'rgb(97, 136, 226)', 'rgb(167, 72, 202)',
+  'rgb(215, 166, 167)']
 const highlightBlue = 'rgb(58, 153, 250)'
 const colorForSeries = s => (s.seriesClass === 'all-series') ? highlightBlue :
-  colors[seriesIndex(s.seriesClass)]
+  colors[seriesIndex(s.seriesClass) % colors.length]
 const rgba = (color, opacity) => `rgba${color.slice(3, -1)}, ${opacity})`
 const rbgaForSeries = s =>
   rgba(colorForSeries(s), opacity(log2N(s.data.length)))
@@ -360,6 +368,18 @@ function selectSeries(s){
     .then(highlightTraces(s, selected.seriesClass))
     .then(wait).then(plotRuntimes)
   }
+}
+
+function selectVariant(select) {
+  let benchmarkName = allSeries.name.split(' ')[0]
+  let params = new URLSearchParams(location.search)
+  // clear selection and logfile, but maintain all other parameters
+  params.delete('f')
+  params.delete('s')
+  params.set('b', benchmarkName)
+  params.set('v', select.options[select.selectedIndex].value)
+
+  window.location.assign(`${location.pathname}?${params}`)
 }
 
 function highlightTraces(s, oldSeries){ // param type: seriesClass
@@ -547,7 +567,7 @@ function setupOverhead() {
 
   is = Object.keys(iterations).sort(ascending)
 
-  if (is.length > 1) {
+  if (is.length > 1 && (is[0] * 2 == is[1])) {
     let i = is[0]
     let j = is[1]
     let ti = seriesMin(iterations[i], 'min')
@@ -555,7 +575,7 @@ function setupOverhead() {
     // let setup = 2*(ti-tj)
     let setup = (i * j * (ti - tj)) / (j - i)
     let ratio = setup/ti
-    if (ratio > 0.05 || allSeries.cleanStats.iqr < setup) {
+    if (ratio > 0.05 || allSeries.cleanStats.iqr * 2 < setup) {
       let label = $('overheadLabel')
       label.innerHTML += ` <span class='ct-label'>${setup}µs (${round(ratio*100, 1)}%) `
       allSeries.setup_overhead = setup
@@ -685,8 +705,13 @@ function layoutAxis() {
 }
 
 // plotly_click handler
-const selectClickedSeries = click => selectSeries(
-  series.find(s => s.name.endsWith(click.points[0].data.name)).seriesClass)
+function selectClickedSeries(click) {
+  const boxplotTrace = t => t.data.type === 'box'
+  let trace = click.points.find(boxplotTrace) || click.points[0]
+  let clickedSeries = series.find(s => s.name.endsWith(trace.data.name))
+    || series[series.length - 1 - click.points[0].data.x] // boxplot workaround
+  selectSeries(clickedSeries.seriesClass)
+}
 
 // Workaround to make responsive design work inside iframe in iOS.
 // ...without this the iframe kept growing when changing dimension
@@ -753,7 +778,7 @@ function defaultRange(axis) {
 
 function updateYRange(plot, range) {
   let l = plot.layout
-  if (!isEqual(l.yaxis.range, range)) {
+  if (l && !isEqual(l.yaxis.range, range)) {
     l.yaxis.range = range
     Plotly.relayout(plot, l)
   }
@@ -790,14 +815,14 @@ function runningMeanVariance([k, M_, S_], x) {
   return [k, M, S]
 }
 
-function quartileIndexes(n) {
+function quartileIndices(n) {
   Q2 = Math.floor(n / 2); Q1 = Math.floor(n / 4); Q3 = Q2 + Q1
   return [Q1, Q2, Q3]
 }
 
 function computeStats(a) { // assumes `a` is sorted ascending
   let [n, M, S] = a.reduce(runningMeanVariance, [0, 0, 0])
-  let [Q1, Q2, Q3] = quartileIndexes(n)
+  let [Q1, Q2, Q3] = quartileIndices(n)
   let [min, q1, median, q3, max] = [a[0], a[Q1], a[Q2], a[Q3], a[n - 1]]
   let [mean, sd] = [Math.round(M), Math.round(Math.sqrt(S/(n-1)))]
   let [range, iqr] = [max - min, q3 - q1]
@@ -869,7 +894,7 @@ function traceBoxPlot(s) {
 function traceMean(s) {
   let mean = s[stats()].mean
   let tif = s.rawStats.tif
-  let tof = s.rawStats.median + (3 * s.rawStats.irq)
+  let tof = s.rawStats.q3 + (3 * s.rawStats.irq)
   let symbol = (mean <= tif) ? 'line-ew-open' :
     (mean <= tof) ? 'circle-open' : 'circle'
   return {
@@ -888,7 +913,7 @@ function traceVerticalHistogram(s) {
     hoverinfo:'x+y',
     ybins: {
       start: s[stats()].min - 1,
-      end: s[stats()].max + 1,
+      end: Math.min(s[stats()].max + 1, allSeries.cleanStats.max/1000 * 10000),
       size: Math.ceil(allSeries.cleanStats.max/1000),
     },
     opacity: 0.6,
@@ -957,7 +982,7 @@ function plotRuntimes() {
 
   var p = (s.max - s.min) * 0.01
   layout.yaxis.range = [s.min - p, s.max + p]
-  layout.xaxis.tickvals = raw ? [0, tifIndex - .5] : [0, ...quartileIndexes(s.n), (s.n - 1)]
+  layout.xaxis.tickvals = raw ? [0, tifIndex - .5] : [0, ...quartileIndices(s.n), (s.n - 1)]
   // FIXME labels for n = 2, 3, 4 (when 5 no. summary doesn't fit)
   layout.xaxis.ticktext = raw ? [0, tifIndex] : ['Min', 'Q1', 'Med', 'Q3', 'Max']
 
@@ -1128,7 +1153,7 @@ function updateParam(name, value) {
 
 // Hide parts specified in URL parameters
 getParam('hide').split(' ').filter(s => s.length > 0).forEach(c =>
-  Plotly.d3.selectAll(`.${c}`).classed('hide', true)
+  Plotly.d3.selectAll(`.${c}, #${c}`).classed('hide', true)
 )
 if (getParam('hide', null)) { // inferring embedding context
   Plotly.d3.select('body').classed('embedded', true)
@@ -1166,7 +1191,8 @@ function computeHomeRange() {
   let p = round(allSeries.cleanStats.range * 0.01, 1)
   allSeries.homeRange = {
     y: [allSeries.cleanStats.min - p,
-        Math.max(...series.map(s => s.rawStats.mean)) + p].map(roundRange),
+        Math.max(...series.map(s => s.rawStats.mean))
+          + allSeries.cleanStats.iqr + p].map(roundRange),
     x: [0, Math.max(...series.map(elapsedTime))]
   }
   allSeries.cleanRange = {
@@ -1179,9 +1205,10 @@ function computeHomeRange() {
 function computeStatsFromData(data) {
   $('title').innerHTML = data.name
   $('seriesTitle').innerHTML = `'${variant}' Series`
-  document.title = data.name
+  document.title = data.name + ' ' + variant + ' ' + getParam('outliers', '')
   allSeries.name = data.name + ' all'
 
+  // const _2k = 4096
   const _2k = 2048
 
   let maxSeriesLength = data.series.map(s => s.data.length).reduce(max)
@@ -1202,8 +1229,7 @@ function computeStatsFromData(data) {
   }
 
 }
-
-let logFile = getParam('f', 'f.json')
+let logFile = getParam('f', `${getParam('b')} ${getParam('v')}.json`)
 let logFileComponents = logFile.split(' ')
 let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
 let variant = fileSuffix.length ? fileSuffix.split('.')[0] : ''
@@ -1237,6 +1263,8 @@ function generateNavigationForm(){ // Navigation form
   let benchmark = $('benchmark')
   if (isHidden(benchmark)) { return }
 
+  let benchmarkName = allSeries.name.split(' ')[0]
+
   var benchmarks
   fetch('benchmarks.json').then(function(response) {
     return response.json();
@@ -1249,8 +1277,20 @@ function generateNavigationForm(){ // Navigation form
       return o
     }
     benchmarks.forEach(t => benchmark.appendChild(option(t)))
-    let benchmarkName = allSeries.name.split(' ')[0]
     benchmark.selectedIndex = benchmarks.findIndex(t => t === benchmarkName)
+  })
+
+  fetch('variants.json').then(function(response) {
+    return response.json();
+  }).then(function(variants) {
+    let variantSelect = $('variant')
+    variants.forEach(v => {
+      let o = document.createElement('option')
+      o.value = v
+      o.text = v
+      variantSelect.appendChild(o)
+    })
+    variantSelect.selectedIndex = variants.findIndex(v => v === variant)
   })
 }
 
