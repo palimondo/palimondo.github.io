@@ -38,9 +38,10 @@
       h2 {font-size: 1.1rem; margin-top: 0;}
 
       body.embedded {margin: 0}
-      .embedded h1 {font-size: 1.1rem;}
+      .embedded h1 {font-size: 1.1rem; font-weight: 600}
       .embedded h2 {font-size: 1rem; font-weight: 600}
       .embedded #series.ct-label {font-size: .75rem;}
+      .embedded .navigation.hide h1 { text-align: center; display: block !important; margin: 0}
 
       .caption {display: flex; flex-flow: row wrap;}
       .caption > * {margin: auto 0; flex: 0 0 auto;}
@@ -136,7 +137,7 @@
                   <select id="variant" name="v" onchange="selectVariant(this)"></select>
                 </form>
                 <h2 id="seriesTitle">Series</h2>
-                <form class="ct-label">
+                <form class="ct-label outliers">
                   <input type="radio" name="series" id="raw" onchange="selectSeries(this)" checked>
                   <label for="raw">Raw</label>
                   <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
@@ -383,6 +384,7 @@ function selectVariant(select) {
 }
 
 function highlightTraces(s, oldSeries){ // param type: seriesClass
+  if (isHidden(chart)) return
   const extras = [-1, -2, -3, -4, -5]
   let opacity = Array(series.length).fill(
     (!s) ? 0.5 : oldSeries ? undefined : 0.1)
@@ -942,19 +944,19 @@ function traceLag(s, l) {
 }
 
 function plotSparkline(line, ss) {
-  if (isHidden($('stats'))) return
+  if (isHidden($('stats'))) return wait(0)
   return Plotly.newPlot(
     line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot)
 }
 
 function plotLags() {
-  let lag = $('lag');  if (isHidden(lag)) return
+  let lag = $('lag');  if (isHidden(lag)) return wait(0)
   return Plotly.newPlot(
     lag, traceLag(currentlySelected().series, 1), axisFormat(), noModeBar)
 }
 
 function plotRuntimes() {
-  let rtPlot = $('runtimes'); if (isHidden(rtPlot)) return
+  let rtPlot = $('runtimes'); if (isHidden(rtPlot)) return wait(0)
   let series = selectedSeries()
   let {runtimes, seriesClass} = series
   let s = computeStats(runtimes)
@@ -1022,7 +1024,7 @@ function plotRuntimes() {
 }
 
 function plotVerticalHistogram() {
-  let vh = $('vertical-histogram'); if (isHidden(vh)) return
+    let vh = $('vertical-histogram'); if (isHidden(vh)) return wait(0)
 
   let s = selectedSeries()
   let l = layoutSansAxis()
@@ -1040,7 +1042,7 @@ function plotVerticalHistogram() {
 }
 
 function plotHistogram() {
-  let histogram = $('histogram'); if (isHidden(histogram)) return
+  let histogram = $('histogram'); if (isHidden(histogram)) return wait(0)
   let s = selectedSeries()
   let {runtimes, seriesClass} = s
   // let {min, max, mean, sd, runtimes, seriesClass} = s
@@ -1087,7 +1089,7 @@ function plotHistogram() {
 }
 
 function plotBoxplot () {
-  let bp = $('boxplot'); if (isHidden(bp)) return
+  let bp = $('boxplot'); if (isHidden(bp)) return wait(0)
   let p = Plotly.newPlot(bp,
     series.map(traceMean).concat(
     series.map(traceBoxPlot).reverse()),
@@ -1099,7 +1101,7 @@ function plotBoxplot () {
 
 
 function plotScatterplot() {
-  if (isHidden(chart)) return
+  if (isHidden(chart)) return wait(0)
   let p = Plotly.newPlot(chart,
     series.map(traceScatterPlot), layoutAxis(), noModeBar)
   chart.on('plotly_afterplot', synchronizeZoom)
@@ -1205,7 +1207,7 @@ function computeHomeRange() {
 function computeStatsFromData(data) {
   $('title').innerHTML = data.name
   $('seriesTitle').innerHTML = `'${variant}' Series`
-  document.title = data.name + ' ' + variant + ' ' + getParam('outliers', '')
+  document.title = data.name + ' ' + variant
   allSeries.name = data.name + ' all'
 
   // const _2k = 4096

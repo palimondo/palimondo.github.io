@@ -6,11 +6,13 @@ I’m kind of new around here, still learning about how the project works. On th
 [pr-8991]: https://github.com/apple/swift/pull/8991 "Fix SR-4601 Report Added and Removed Benchmarks in Performance Comparison"
 [pr-10035]: https://github.com/apple/swift/pull/10035 "Added documentation and test coverage."
 
-One of my PRs in the benchmarking area was [blocked](https://github.com/apple/swift/pull/12415) by @gottesmm TK (@Michael_Gottesman), pending wider discussion on swift-dev, I’m guessing because to err on the conservative side is safer than letting me run wild around benchmarks… So the following is *rather long* way to demonstrate what changes to the benchmark suite and our measurement process will, in my opinion, give us more robust results in the future.
+One of my PRs in the benchmarking area was [blocked](https://github.com/apple/swift/pull/12415) by @gottesmm TK (@Michael_Gottesman), pending wider discussion on swift-dev, I’m guessing because to err on the conservative side is safer than letting me run wild around benchmarks… So the linked document is *rather long* way to demonstrate what changes to the benchmark suite and our measurement process will, in my opinion, give us more robust results in the future.
+
+I apologize that the report deals with state of Swift Benchmark Suite from autumn 2018, keeping the tree up to date once the commits I was depending required lengthy manual conflict resolution I gave up on that and kept focusing on the experiment, rather than futile chase of the tip of the tree…
 
 ----
 
-This document describes the state of Swift Benchmark Suite around the autumn of 2017 and describes work to improve the robustness of performance measurements done on [experimental branch][vk-branch] since the end of June.
+This document describes the state of Swift Benchmark Suite around the autumn of 2017 and discusses work to improve the robustness of performance measurements done on [experimental branch][vk-branch] since the end of June 2017.
 
 [vk-branch]: http://bit.ly/pali-VK "voight-kampff"
 
@@ -61,7 +63,7 @@ The `Benchmark_X` is then executed with `num-iters=1` and the specified `num-sam
 Benchmarks can jump between brackets of the number of samples taken on different runs (eg. master branch vs. PR), but measurements are always done with fixed `num-iters` depending on measurement strategy, as described below.
 
 ### Monitoring the Environment
-Looking at the way we use `time` command invocation of `Benchmark_X` from `Benchmark_Driver` to monitor memory consumption, I noticed that it also reports the number of voluntary and involuntary context switches. So I have started to collect this measure as proxy for sample quality that reflects the load of the system, the amount of connection between competing processes. The number of involuntary context switches (**ICS**) is about 100 per second when my machine is absolutely calm and sometimes reaches over 1000/s when my machine is busy. The lower bound matches the [anecdotal time slice](https://www.motherboardpoint.com/threads/time-slice-in-os-x.253761/) of 10 ms (10 000 μs) for Mac OS’s scheduler. The number of ICS correlates with the variability of samples.
+Looking at the way we use `time` command invocation of `Benchmark_X` from `Benchmark_Driver` to monitor memory consumption, I noticed that it also reports the number of voluntary and involuntary context switches. So I have started to collect this measure as proxy for sample quality that reflects the load of the system, the amount of contention between competing processes. The number of involuntary context switches (**ICS**) is about 100 per second when my machine is absolutely calm and sometimes reaches over 1000/s when my machine is busy. The lower bound matches the [anecdotal time slice](https://www.motherboardpoint.com/threads/time-slice-in-os-x.253761/) of 10 ms (10 000 μs) for Mac OS’s scheduler. The number of ICS correlates with the variability of samples.
 
 ### Measurement Methodology
 The measurements were performed in macOS Sierra running on the Late 2008 MacBook Pro with 2.4 GHz Intel Core 2 Duo CPU which is approximately an order of magnitude slower then the Mac Minis used to run benchmarks by CI bots. The recent upgrade of CI infrastructure to use Mac Pros makes this performance gap even bigger. It means that absolute numbers from benchmarks differ compared to those you’ll find in the results from CI on Github, but I believe the overall statistical properties of the dataset are the same.
@@ -81,84 +83,108 @@ The individual series of measurements for a given benchmark are labeled with let
 <dd>Where R stands for reversed order; measured 5 `i2` series followed by 5 `i1` series for a total of 10 one-second benchmark runs.
 </dd>
 <dt><strong>12 Series</strong></dt>
-<dd>Measurements collecting 4 `i1`, 4 `i2` and 4 `i4` runs, for a total of 12 independent one-second benchmark executions (run with `num-iters` = 4, 2, 1, 4, 2, 1, etc.).
+<dd>Measurements collecting 4 `i1`, 4 `i2` and 4 `i4` runs, interleaved, for a total of 12 independent one-second benchmark executions (run with `num-iters` = 4, 2, 1, 4, 2, 1, etc.).
 </dd>
 </dl>
 
 #### Controlling the Load
-During my experiments I have noticed that getting a calm machine is very difficult. I had to resort to pretty extreme measures: close all applications (including menu bar apps), quit the Finder(!), disable Python‘s automatic garbage collection and control it manually so that it didn’t interfere with `Benchmark_O`’s measurements. 
+Getting a calm machine during my experiments was very difficult. I had to resort to pretty extreme measures: close all applications (including menu bar apps), quit the Finder(!), disable Python‘s automatic garbage collection and control it manually so that it didn’t interfere with `Benchmark_O`’s measurements. 
 
 Producing comparable results during the whole suite measurement was tricky. I have noticed that measurement quality (reflected in very low ICS) mysteriously improved for later benchmarks, once the display went to sleep. I figured out that getting down to 100 ICS/s is possible when you minimize the Terminal window during the measurement for some reason. With the Terminal window open, the mean ICS/s was around 300. To control for this effect, the display sleep was disabled. For the best possible result (the “a series” below) the Terminal window was also minimized.
 
 Python’s [`multiprocessing.Pool`](https://docs.python.org/2.7/library/multiprocessing.html#module-multiprocessing.pool) was used to control the amount of contention between concurrently running processes competing for the 2 physical CPU cores. Varying the amount of worker processes that measured multiple benchmarks in parallel provided comparable and relatively constant machine load for the duration of the whole benchmark suite execution.
+
+Samples in series **a** and **b** had only **1 process** performing the measurements. The samples collected in the **c** series had **2 processes** running benchmarks concurrently and taking the measurements on a 2 core CPU. Series **d** had **3 processes** and series **e** had **4 processes** measuring concurrently running benchmarks competing for the 2 physical CPU cores. 
+
+All this is meant to simulate the effect of varying system load, that is outside of our control. For example the CI bots that perform the Swift Benchmark Suite measurements are also running the continuous integration server Jenkins, which uses Java as its runtime environment. We have no control over the Java’s garbage collection that will run concurrently to our benchmark measurements — we have to design our measurement process to be resilient and robust in this environment.
 
 #### Raw Data
 
 The complete set of Swift Benchmark Suite samples collected with a given strategy on a machine with certain level of load is labeled by the letter of alphabet followed by a number of series taken for each benchmark and an optional suffix.
 
 | Series | a | b | c | d | e |
-|---|---|---|---|---|---|
+|---:|---|---|---|---|---|
 | **10** | [a10](chart.html?f=Ackermann+a10.json) | [b10](chart.html?f=Ackermann+b10.json) | [c10](chart.html?f=Ackermann+c10.json) | [d10](chart.html?f=Ackermann+d10.json) | [e10](chart.html?f=Ackermann+e10.json) |
 | **12** | [a12](chart.html?f=Ackermann+a12.json) | [b12](chart.html?f=Ackermann+b12.json) | [c12](chart.html?f=Ackermann+c12.json) | [d12](chart.html?f=Ackermann+d12.json) | [e12](chart.html?f=Ackermann+e12.json) |
 | **10R** | [a10R](chart.html?f=Ackermann+a10R.json) | [b10R](chart.html?f=Ackermann+b10R.json) | [c10R](chart.html?f=Ackermann+c10R.json) | [d10R](chart.html?f=Ackermann+d10R.json) | [e10R](chart.html?f=Ackermann+e10R.json) |
-| **# proc** | **1** | **1** | **2** | **3** | **4** |
 
-The *a* and *b* series both run in 1 process, except that for the *a* series measurement the Terminal window was minimized.
+The *a* and *b* series both run in 1 process, except that for the *a* series measurement the Terminal window was minimized. 
 
-Another set of samples with varying number of iterations per run, from 1 up, in powers of 2 until the only two samples are collected, are available in the [**iters**](chart.html?f=Ackermann+iters.json) series. The machine load during this measurement was equivalent to the *c* series above.
+The number of involuntary context switches (ICS) is just a proxy for machine load. When we normalize the ICS per second, this measure for a series in a given system load level is almost normally distributed. The *a* series is very tightly packed with mean value at 90 ICS/s (±10). The *b* series has two [modes](https://en.wikipedia.org/wiki/Mode_%28statistics%29): one sharp peak at 120 ICS/s (±10) and another wide peak at 350 ICS/s (±80). The ICS spread in *c* series is very wide with mode at 700 (±280).
 
-As an ideal baseline for the status quo, the collection of 4 series with 20 automatically scaled (`num-samples=0`) samples was driven by a [shell script](measure_i0.sh) that saved logs in individual files for later processing is collected in the [**i0** series](chart.html?f=Ackermann+i0.json). This is roughly equivalent to 4 whole benchmark suite executions on a machine with load corresponding to the *a* series above.
+| Series | a | b | c | d | e |
+|---:|:---:|:---:|:---:|:---:|:---:|
+| **Number of <br> processes** | 1 | 1 | 2 | 3 | 4 |
+| **Mean runtime** <br> (s/benchmark) | 1 | 1 | 1 | 1.5 | 2 |
+| **ICS Mode** | 90 | 120 <br> 350 | 700 | 500 | 380 |
+| **ICS Standard <br> Deviation** | ±10 | ±10 <br> ±80 | ±280 | ±190 | ±140 |
+
+Even on a fully saturated processor, the number of context switches does not often exceed 1000 ICS during one benchmark measurement, but the interruptions get longer. This is why the ICS values normalized to one second gets lower as the mean runtime increases for series *d* and *e*.
+
+Another set of samples with varying number of iterations per run, from 1 up, in powers of 2 until the only two samples are collected, are available in the [**iters**](chart.html?f=Ackermann+iters.json) series. The machine load during this measurement was roughly equivalent to the *c* series above (Mode 600 ICS/s, ±200).
+
+As an ideal baseline for the status quo, the collection of 4 series with 20 automatically scaled (`num-samples=0`) samples was driven by a [shell script](measure_i0.sh) that saved logs in individual files for later processing is collected in the [**i0** series](chart.html?f=Ackermann+i0.json). This is roughly equivalent to 4 whole benchmark suite executions on a machine with load corresponding to the *a* series above. 
+
+Remember that *a* level of system load is never attainable on CI bots running Java, even if we take care of macOS system’s background processes like (Spotlight indexing and Time Machine backups), but is used here to establish the rough equivalence between the ideal version of status quo and proposed changes to the measurement process.
 
 ## Analysis
-Let’s first examine one fairly typical benchmark.
-TK
-[1](chart.html?f=ArrayLiteral+iters.json)
+To understand what’s behind the mean value reported by our status quo measurement process, we’ll examine single benchmark with the newly increased sampling frequency. All eleven series of samples in the chart below represent ~1s (0.7–0.8s in this case) of timing the benchmark [`Calculator`](https://github.com/apple/swift/blob/master/benchmark/single-source/Calculator.swift), with varying number of iterations. This yields progressively less samples (`n` in the table) as the number of iterations averaged in the reported time increases (denoted by `i#` in the series’ name). Remember that our current measurement process reports only the mean value (**x̅** column) from 1 second of execution for each of the series. 
 
-<iframe src="chart.html?f=ArrayLiteral+iters.json&hide=navigation+plots" name="ArrayLiteral+iters" frameborder="0" width="100%" height="640"></iframe>
+Notice the differences between [mean](https://en.wikipedia.org/wiki/Mean#Statistical_location) and [median](https://en.wikipedia.org/wiki/Median) (**x̅** vs. **Med**), which are statistical estimates of a [typical value](https://www.itl.nist.gov/div898/handbook/eda/section3/eda351.htm). The [the spread, or variability](http://www.itl.nist.gov/div898/handbook/eda/section3/eda356.htm) of the sample is characterized by [standard deviation](https://en.wikipedia.org/wiki/Standard_deviation) (**s**) and [interquartile range](https://en.wikipedia.org/wiki/Interquartile_range) (**IQR**). They are followed in the series table by relative measures of this dispersion: the [coefficient of variation](https://en.m.wikipedia.org/wiki/Coefficient_of_variation) (**CV** = s / Mean); the equivalent for IQR is computed here as IQR / Median. Take note of the differences between these values for series with low iteration counts.<sup>[1](chart.html?f=Calculator+iters.json)</sup>
 
-All ten series in the chart above represent ~1s of timing benchmark [`ArrayLiteral`](https://github.com/apple/swift/blob/master/benchmark/single-source/ArrayLiteral.swift), with varying number of iterations (denoted by `i#` in the series’ name). This results in progressively less samples (`n` in the table) as the number of iterations averaged in the reported time increases.
+<iframe src="chart.html?f=Calculator+iters.json&hide=navigation+zoom+plots+boxplot+vertical-histogram+outliers&ry=359.8+460.2" name="Calculator+iters" frameborder="0" width="100%" height="680"></iframe>
 
-TK
+*The range shown on Y axis is about 25% of the minimum value, as can be seen in **R** and **%** columns of the **i4** series. You can explore the individual sample series by selecting it from the table. It will be highlighted in the chart, with filled region showing the mean value of the series.*
 
-On the other hand, the higher iteration counts are averaging over longer stretches of time, therefore including more of the accumulated error. The worst extreme being our status quo, where the reported 1 sample/second also includes all interrupts to the measured process during that time.
+In general, as less iterations are averaged in each reported sample, the variability of sample population increases. For example, there is quite extreme maximum value of 22586 in the *i1* series. This is probably the reason for originally introducing the averaging over multiple iterations in `Benchmark_X` in the first place. At least that’s how I understand Andrew Trick’s [recollection here](https://github.com/apple/swift/pull/8793#issuecomment-297791517).
 
-TK 
+But the increase in variability comes from measurement errors caused by preemptive multitasking. When the operating system’s scheduler interrupts our process in the middle of timing a benchmark, the reported sample time also includes the time it took to switch context to another process, its execution and switching back. The frequency and magnitude of these errors varies depending on the overall system load and is outside of our direct control. The higher iteration counts are averaging over longer stretches of time, therefore including more of the accumulated error. The worst case being our status quo, where the reported 1 sample/second also includes all interrupts to the measured process during that time.
 
-With the decrease of iterations averaged in each sample, their variability rises. This is probably the reason for originally introducing the averaging over multiple iterations in `Benchmark_X` in the first place. At least that’s how I understand @atrick’s [recollection here](https://github.com/apple/swift/pull/8793#issuecomment-297791517).
+What happens to the average of the mean with higher system load? The value currently used to detect improvements and regressions in our benchmark is the minimum of these averaged values, so we’ll examine that too. These are the values measured with *10 Series* strategy:
 
-But the increase in variability is comes from accumulated errors caused by preemptive multitasking. When the operating system’s scheduler interrupts our process in the middle of measurement, the reported sample time also includes the time it took to switch context to another process, its execution and switching back. The frequency and magnitude of these errors varies depending on the overall system load and is outside of our direct control. 
+| Calculator | a | b | c | d | e |
+|-|-|-|-|-|-|
+| **Mean of x̅** | [368](chart.html?f=Calculator+a10.json) | [374](chart.html?f=Calculator+b10.json) | [401](Calculator+c10.json) | [615](chart.html?f=Calculator+d10.json) | [891](chart.html?f=Calculator+e10.json) |
+| **Min of x̅** | [368](chart.html?f=Calculator+a10.json&s=i1c) | [372](chart.html?f=Calculator+b10.json&s=i1d) | [385](Calculator+c10.json&s=i2c) | [576](chart.html?f=Calculator+d10.json&s=i2d) | [779](chart.html?f=Calculator+e10.json&s=i2d) |
 
-Current measurement system with auto-scaling always **reports the time with cumulative error** of all the interrupts that have occurred during the ~1s of measurement. This is the **root cause of instability** in the reported benchmark improvements and regressions. There are no unstable benchmarks. Our **measurement process is fragile** — easily susceptible to the whims of varying system load. Currently we only attempt to counteract it with brute force, looking for the lowest average sample gathered in about 20 seconds. We are also looking for an outlier: a minimum, not a typical value! With having just 20 samples overall, we have little indication of their quality. Smoke benchmark with 3 samples has no hard statistical evidence for the reported improvements and regressions.
+Current measurement system with auto-scaling always **reports the time with cumulative error** of all the interrupts that have occurred during the ~1s of measurement. This is the **root cause of instability** in the reported benchmark improvements and regressions. There are no unstable benchmarks. Our **measurement process is fragile** — easily susceptible to the whims of varying system load. Currently we only attempt to counteract it with brute force, looking for the lowest average sample gathered in about 20 seconds. We are also looking for an outlier there: a minimum of the means, not a typical value! With having just 20 samples overall, we have little indication of their quality. Smoke benchmark with 3 samples has hardly any statistical evidence for the reported improvements and regressions.
 
-TK
-In the end, I think it is safe to conclude that averaging multiple samples together, i.e. measuring with `num-iters` > 1, servers no useful purpose and only precludes the separation of signal from the noise.
+Due to the systemic measurement error introduced from preemptive multitasking, which has very long tail and is therefore nowhere near normally distributed, the **mean and standard deviation are poor estimates of a [location](https://www.itl.nist.gov/div898/handbook/eda/section3/eda351.htm) and [spread](http://www.itl.nist.gov/div898/handbook/eda/section3/eda356.htm)** for raw benchmark measurements when the system is even under moderate load.  **Median** and **interquartile range** are a more robust measures in the presence of outliers.
 
-With the increased sampling frequency, it is possible to detect outliers. On the left side of the scatter plot of individual samples is a [box plot](http://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm), which shows the first quartile (**Q1**, the 25th percentile), median (**Med**) and third quartile (**Q3**, 75th percentile) as filled rectangle. This box represents the middle 50% or the “body” of the data, the interquartile range. The whiskers protruding from it represent either the minimum and maximum or the inner fences, which are used to detect outliers based on the interquartile range (**IQR** = Q3 - Q1). In our case, we are concerned about outliers that increase our error, so we will keep the minimum and only use the top inner fence (**TIF** = Q3 + 1.5 * IQR). All samples above this value will be considered **outliers**. 
-
-The mean values are also shown in this box plot as a small horizontal line across the box, if it lies within the “clean” range (<= TIF) or as a circle if it lies above it.
-
-The [scatter plot](http://www.itl.nist.gov/div898/handbook/eda/section3/scatterp.htm) in the middle contains vertical lines denoting the median (solid line), Q1 and Q3 (dotted), mean (dashed) and TIF (dash-dot). 
-
-On the right side of the scatter plot is the vertical [histogram](http://www.itl.nist.gov/div898/handbook/eda/section3/histogra.htm).
-
-TK show chart for a10 series
-
-From the histogram we can see that our measurements are **not normally distributed**, but skewed due to the presence of outliers. This makes the **mean** and **standard deviation** (SD) poor estimates for a [typical value](http://www.itl.nist.gov/div898/handbook/eda/section3/eda351.htm) and its [uncertainity](http://www.itl.nist.gov/div898/handbook/eda/section3/eda356.htm) in our raw dataset. **Median** and **interquartile range** are a more robust measures in this case. All these measures are compared in the table for each series as well as for all samples together. Notice the percentage difference of uncertainty between the IQR (computed here as IQR / Median) and [coefficient of variation](https://en.m.wikipedia.org/wiki/Coefficient_of_variation) (**CV** = SD / Mean).
+I think it is safe to conclude that averaging multiple samples together, i.e. measuring with `num-iters` > 1, serves no useful purpose and only precludes the separation of signal from the noise.
 
 ### Exclude Outliers
+With the increased sampling frequency, it is possible to detect outliers and deal with them. Let’s examine the `i4` series from Calculator benchmark above in more detail.
 
-To improve the quality and reliability of our measurement process, we can exclude the outlier samples. Filtering the measured data to exclude all samples above the top inner fence from the box plot (Q3 + 1.5 * IQR) yields much cleaner dataset.
+On the left side of the scatter plot of individual samples is a [**box plot**](http://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm), which shows the first [quartile](https://en.wikipedia.org/wiki/Quartile) (**Q1**, the 25th percentile), median (**Med**) and third quartile (**Q3**, 75th percentile) as filled rectangle. This box represents the middle 50% or the “body” of the data. Their difference is the **interquartile range** (**IQR** = Q3 - Q1). The whiskers protruding from it represent the minimum and maximum values.
 
-TK chart with exclude outliers
+There is a useful variation of the box plot that first computes *fence points*, which are used to detect the outliers. In our case, we are only concerned with outliers that increase our error, so we will keep the minimum and only use the **top inner fence** (**TIF** = Q3 + 1.5 * IQR), if it exceeds the maximum. All samples above this value will be considered **outliers**. 
 
-Using this rule of thumb to clean our data takes care of the clear outliers. We see the range (**R**) and CV metrics improve. For measurements on a relatively calm machine, this technique is able to almost normalize the measured data: Mean is very close to Median and IQR is comparable to CV.
+This box plot variant also shows the mean values as a small horizontal lines, if it lies within the “clean” range (<= TIF) or as a circle if it lies above it. The [**scatter plot**](http://www.itl.nist.gov/div898/handbook/eda/section3/scatterp.htm) in the middle contains vertical lines denoting the median (solid line), Q1 and Q3 (dotted), mean (dashed) and TIF (dash-dot). On the right side of the scatter plot is the vertical [**histogram**](http://www.itl.nist.gov/div898/handbook/eda/section3/histogra.htm) (bin size is 1μs in this particular case).<sup>[2](chart.html?f=Calculator+iters.json&ry=364.8+390.2&s=i4)</sup>
 
-Aggregating samples from all series improves the robustness of measurement process in a presence of outlier series.
+<iframe src="chart.html?f=Calculator+iters.json&hide=navigation+zoom+stats+lagplot+histogram+outliers&ry=364.8+390.2&s=i4" frameborder="0" width="100%" height="640" name="Calculator+iters+i4"></iframe>
 
-TK characterize the nature of error, susceptibility to contamination (python GC, etc), the need to eliminate the outliers. 
+The *Runtimes* chart gives us another perspective by plotting the sampled values in ascending order. After working with the benchmark dataset for a while, it helps you get a feel for the probability distribution of the series. It is therefore also plotted as a micro chart in the first column of the series table.
+
+From the runtimes chart we see that the top inner fence is computed at 370, which means that 90% of our samples are under this value and there are 53 outliers. To improve the quality and reliability of our measurement process we can borrow the box plot’s technique to exclude outlier samples from our dataset:<sup>[3](chart.html?f=Calculator+iters.json&ry=364.8+390.2&s=i4&outliers=clean)</sup>
+
+<iframe src="chart.html?f=Calculator+iters.json&hide=navigation+zoom+stats+plots&ry=364.8+390.2&s=i4&outliers=clean" name="Calculator+iters+i4+clean" frameborder="0" width="100%" height="430"></iframe>
+
+For benchmarks with low runtimes, which translates to plenty of samples during the 1s measurement, the high sampling frequency yields clear separation between the signal and noise. This is the same Calculator benchmark, this time from *d* series, i.e. measured on a 2 core machine with 3 processes — a very high load and a contested CPU scenario. Notice how the low Q1, Q3, IQR and Median values are stable across all series in contrast to the high and fluctuating Max, Range (R), Mean and  CV.<sup>[4](chart.html?f=Calculator+d10.json&s=i2d)</sup>
+
+<iframe src="chart.html?f=Calculator+d10.json&hide=navigation+zoom+lagplot+histogram&s=i2d" name="Calculator+d10+i2d+raw" frameborder="0" width="100%" height="640"></iframe>
+
+In the limit case, when the `Q1=Q3`, this technique can exclude at most 25% samples from the raw series, as can be seen in the case of *i2d* series selected in the runtimes chart above. Excluding outliers in the ideal case yields pure signal:<sup>[5](chart.html?f=Calculator+d10.json&s=i2d&outliers=clean)</sup>
+
+<iframe src="chart.html?f=Calculator+d10.json&hide=navigation+zoom+plots+chart&s=i2d&outliers=clean" name="Calculator+d10+i2d+clean" frameborder="0" width="100%" height="270"></iframe>
+
+Single one-second measurement, even when it collects thousands of individual samples, does not fully represent the measured benchmark in every case. Depending on the particular benchmark, there are various effects (caching, state of branch prediction) that can produce different typical values between a series of measurements. Therefore it is still important to conduct multiple independent runs of the benchmark. Aggregating samples from all series improves the robustness of measurement process, forming a more complete picture of the underlying probability distribution. When excluding outliers, the *all* series is the aggregate of individually cleaned series. An example of this is the EqualSubstringSubstring benchmark from *a10R* series.<sup>[6](chart.html?f=EqualSubstringSubstring+a10R.json&outliers=clean)</sup>
+
+<iframe src="chart.html?f=EqualSubstringSubstring+a10R.json&hide=navigation+zoom+stats&outliers=clean" name="EqualSubstringSubstring+a10R+clean" frameborder="0" width="100%" height="700"></iframe>
+
+*There are two additional charts at the bottom: a histogram with bins sized to standard deviation and a [**lag plot**](https://www.itl.nist.gov/div898/handbook/eda/section3/lagplot.htm) that checks whether a data set or time series is random or not. This completes the demonstration of [exploratory data analysis techniques](https://www.itl.nist.gov/div898/handbook/eda/section3/eda33.htm) implemented in the `chart.html`. If you follow the numbered links, they open a standalone chart, which also includes navigation between the various series and benchmarks as well as zoom tools that were hidden in the embedded context of this document. I encourage you to explore the benchmark dataset in this browser based viewer, which is fully responsive, so that you can use it also on tablets and mobile phones. The state of the viewer is fully encoded in the URL, so if you find something interesting you want to discuss, just share the full URL.*
 
 ### Exclude Setup Overhead
-
 Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Most tests do this by wrapping the main body of work in an inner loop with constant multiplier in addition to the outer loop driven by the `N` variable supplied by the harness. Setup is performed before these loops.
 
 The setup overhead is a systematic measurement error, that can be detected and corrected for, when measuring with multiple `num-iters`. 
@@ -184,14 +210,14 @@ The `Array2D` benchmark has significant memory use range of 7MB (3292 — 5101 p
 Based on the above analysis I suggest we take following corrective measures:
 
 * Ensure individual benchmarks conform to expected requirements by automating their validation (using `BenchmarkDoctor`):
-** Runtime under 2500 μs (with exceptions for individual members of benchmark families)
-** Negligible setup overhead (under 5% of runtime)
-** Constant memory use independent of iteration count
-** Benchmark name is less than or equal to 40 characters, to prevent obscuring results in report tables
+  * Runtime under 2500 μs (with exceptions for individual members of benchmark families)
+  * Negligible setup overhead (under 5% of runtime)
+  * Constant memory use independent of iteration count
+  * Benchmark name is less than or equal to 40 characters, to prevent obscuring results in report tables
 * Measure memory use and context switches in Swift by calling `rusage` before 1st and after last sample is taken (abstracted for platform specific implementations)
 * Exclude outliers from measured dataset by filtering run times that exceed (Q3 + 1.5 * IQR) (`--exclude-outliers=true` by default)
 * Report following statistics for a performance test run:
-** Minimum, Q1, Median, Q3, Maximum, Mean, SD, n (number of samples after excluding outliers), number of context switches during measurement, TK ? Cumulative time (for whole measurement)
+  * Minimum, Q1, Median, Q3, Maximum, Mean, SD, n (number of samples after excluding outliers), number of context switches during measurement, TK ? Cumulative time (for whole measurement)
 * Implement parallel benchmarking in `BenchmarkDriver` script to dramatically speed up measurement of the whole benchmark suite.
 
 Other possible improvements:  
