@@ -178,20 +178,34 @@ In the limit case, when the `Q1=Q3`, this technique can exclude at most 25% samp
 
 <iframe src="chart.html?f=Calculator+d10.json&hide=navigation+zoom+plots+chart&s=i2d&outliers=clean" name="Calculator+d10+i2d+clean" frameborder="0" width="100%" height="270"></iframe>
 
-Single one-second measurement, even when it collects thousands of individual samples, does not fully represent the measured benchmark in every case. Depending on the particular benchmark, there are various effects (caching, state of branch prediction) that can produce different typical values between a series of measurements. Therefore it is still important to conduct multiple independent runs of the benchmark. Aggregating samples from all series improves the robustness of measurement process, forming a more complete picture of the underlying probability distribution. When excluding outliers, the *all* series is the aggregate of individually cleaned series. An example of this is the EqualSubstringSubstring benchmark from *a10R* series.<sup>[6](chart.html?f=EqualSubstringSubstring+a10R.json&outliers=clean)</sup>
+Single one-second measurement, even when it collects thousands of individual samples, does not fully represent the measured benchmark in every case. Depending on the particular benchmark, there are various effects (caching, state of branch prediction) that can produce different typical values between a series of measurements. Therefore it is still important to conduct multiple independent runs of the benchmark. Aggregating samples from all series improves the robustness of measurement process, forming a more complete picture of the underlying probability distribution. When excluding outliers, the *all* series is the aggregate of individually cleaned series. An example of this is the [`EqualSubstringSubstring`](https://github.com/apple/swift/blob/master/benchmark/single-source/Substring.swift) benchmark from *a10R* series.<sup>[6](chart.html?f=EqualSubstringSubstring+a10R.json&outliers=clean)</sup>
 
 <iframe src="chart.html?f=EqualSubstringSubstring+a10R.json&hide=navigation+zoom+stats&outliers=clean" name="EqualSubstringSubstring+a10R+clean" frameborder="0" width="100%" height="700"></iframe>
 
 *There are two additional charts at the bottom: a histogram with bins sized to standard deviation and a [**lag plot**](https://www.itl.nist.gov/div898/handbook/eda/section3/lagplot.htm) that checks whether a data set or time series is random or not. This completes the demonstration of [exploratory data analysis techniques](https://www.itl.nist.gov/div898/handbook/eda/section3/eda33.htm) implemented in the `chart.html`. If you follow the numbered links, they open a standalone chart, which also includes navigation between the various series and benchmarks as well as zoom tools that were hidden in the embedded context of this document. I encourage you to explore the benchmark dataset in this browser based viewer, which is fully responsive, so that you can use it also on tablets and mobile phones. The state of the viewer is fully encoded in the URL, so if you find something interesting you want to discuss, just share the full URL.*
 
 ### Exclude Setup Overhead
-Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Most tests do this by wrapping the main body of work in an inner loop with constant multiplier in addition to the outer loop driven by the `N` variable supplied by the harness. Setup is performed before these loops.
+Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Most tests do this by wrapping the main body of work in an inner loop with constant multiplier in addition to the outer loop driven by the `N` variable supplied by the harness. Setup is performed before these loops. The impact of setup is further lessened by amortizing it over the `N` measured iterations.
 
-The setup overhead is a systematic measurement error, that can be detected and corrected for, when measuring with multiple `num-iters`. 
+Since we no longer measure with `N>1`, the effect of setup becomes more pronounced. This is one of the most extreme examples, benchmark [`ReversedArray`](https://github.com/apple/swift/blob/master/benchmark/single-source/ReversedCollections.swift) that clearly demonstrates the amortization of the setup overhead as `num-iters` increases.<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6&rx=0+1087235)</sup>
 
-TK equation for setup overhead
+<iframe src="chart.html?b=ReversedArray&v=iters&hide=navigation+zoom+outliers+plots+stats+overhead+note&ry=188.6+376.6&rx=0+1087235" name="ReversedArray+iters+raw" frameborder="0" width="100%" height="430"></iframe>
+
+The setup overhead is a systematic measurement error, that can be detected and corrected for, when measuring with different `num-iters`. Given two measurements performed with `i` and `j` iterations, that reported corresponding runtimes `ti` and `tj`, the setup overhead can be computed as follows: 
+
+```setup = (i * j * (ti - tj)) / (j - i)```
+
+We can detect the setup overhead by picking smallest minimum from series with same `num-iters` and using the above formula for `i=1, j=2`. In the *a10R* series from `ReversedArray` it gives us 134µs of setup overhead (or 41.4% of the minimal value).<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6)</sup>
+
+<iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6" name="ReversedArray+a10R+raw" frameborder="0" width="100%" height="430"></iframe> 
+
+We can normalize the series with different `num-iters` by subtracting the corresponding fraction of the setup from each sample. The median value after we exclude the setup overhead is 190µs which exactly matches the baseline from the [i0 Series](chart.html?f=ReversedArray+i0.json).<sup>[8](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6&overhead=true)</sup>
+
+<iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6&overhead=true" name="ReversedArray+a10R+corrected" frameborder="0" width="100%" height="430"></iframe> 
+
 
 Following test have setup overhead (with %):
+TK
 
 [PR 12404](https://github.com/apple/swift/pull/12404/commits) has added the ability to perform setup and tear down outside of the measured performance test that is so far used by one benchmark.
 

@@ -143,7 +143,7 @@
                   <input type="radio" name="series" id="clean" onchange="selectSeries(this)">
                   <label for="clean">Exclude Outliers</label>
                 </form>
-                <form class="ct-label">
+                <form class="ct-label overhead">
                   <input type="checkbox" name="overhead" id="overhead" onchange="selectSeries(this)" class="hide">
                   <label id="overheadLabel" for="overhead" class="hide">Exclude Setup Overhead</label>
                 </form>
@@ -1256,7 +1256,7 @@ fetch(logFile)
 })
 
 function plotSparklines() {
-  return sparklines.reduce((p1, p2) => p1.then(wait).then(p2), wait(1000))
+  // return sparklines.reduce((p1, p2) => p1.then(wait).then(p2), wait(1000))
 }
 
 const isHidden = e => e.offsetParent === null
