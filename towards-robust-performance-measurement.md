@@ -185,9 +185,9 @@ Single one-second measurement, even when it collects thousands of individual sam
 *There are two additional charts at the bottom: a histogram with bins sized to standard deviation and a [**lag plot**](https://www.itl.nist.gov/div898/handbook/eda/section3/lagplot.htm) that checks whether a data set or time series is random or not. This completes the demonstration of [exploratory data analysis techniques](https://www.itl.nist.gov/div898/handbook/eda/section3/eda33.htm) implemented in the `chart.html`. If you follow the numbered links, they open a standalone chart, which also includes navigation between the various series and benchmarks as well as zoom tools that were hidden in the embedded context of this document. I encourage you to explore the benchmark dataset in this browser based viewer, which is fully responsive, so that you can use it also on tablets and mobile phones. The state of the viewer is fully encoded in the URL, so if you find something interesting you want to discuss, just share the full URL.*
 
 ### Exclude Setup Overhead
-Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Most tests do this by wrapping the main body of work in an inner loop with constant multiplier in addition to the outer loop driven by the `N` variable supplied by the harness. Setup is performed before these loops. The impact of setup is further lessened by amortizing it over the `N` measured iterations.
-
-Since we no longer measure with `N>1`, the effect of setup becomes more pronounced. This is one of the most extreme examples, benchmark [`ReversedArray`](https://github.com/apple/swift/blob/master/benchmark/single-source/ReversedCollections.swift) that clearly demonstrates the amortization of the setup overhead as `num-iters` increases.<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6&rx=0+1087235)</sup>
+Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Setup is performed before the main work loop, and its impact is further lessened by amortizing it over the `N` measured iterations.
+<!--
+Since we no longer measure with `N>1`, the effect of setup becomes more pronounced. One of the most extreme cases, benchmark [`ReversedArray`](https://github.com/apple/swift/blob/master/benchmark/single-source/ReversedCollections.swift) clearly demonstrates the amortization of the setup overhead as `num-iters` increase.<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6&rx=0+1087235)</sup>
 
 <iframe src="chart.html?b=ReversedArray&v=iters&hide=navigation+zoom+outliers+plots+stats+overhead+note&ry=188.6+376.6&rx=0+1087235" name="ReversedArray+iters+raw" frameborder="0" width="100%" height="430"></iframe>
 
@@ -195,7 +195,7 @@ The setup overhead is a systematic measurement error, that can be detected and c
 
 ```setup = (i * j * (ti - tj)) / (j - i)```
 
-We can detect the setup overhead by picking smallest minimum from series with same `num-iters` and using the above formula for `i=1, j=2`. In the *a10R* series from `ReversedArray` it gives us 134µs of setup overhead (or 41.4% of the minimal value).<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6)</sup>
+We can detect the setup overhead by picking smallest minimum from series with same `num-iters` and using the above formula where `i=1, j=2`. In the *a10R* series from `ReversedArray` it gives us 134µs of setup overhead (or 41.4% of the minimal value).<sup>[7](chart.html?f=ReversedArray+iters.json&ry=188.6+376.6)</sup>
 
 <iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6" name="ReversedArray+a10R+raw" frameborder="0" width="100%" height="430"></iframe> 
 
@@ -208,7 +208,7 @@ Following test have setup overhead (with %):
 TK
 
 [PR 12404](https://github.com/apple/swift/pull/12404/commits) has added the ability to perform setup and tear down outside of the measured performance test that is so far used by one benchmark.
-
+-->
 ### Memory Use
 Collecting the maximum resident set size from the `time` command gives us a rough estimate of memory used by a benchmark during the measurement. The measured value is in bytes, but with a granularity of a single page (4 KB). When running `Benchmark_O` with nonexistent test 50 times, we establish a minimal baseline value of 2434 pages (9.5 MB) that jumps around between measurements. I guess this is due to varying amount of memory fragmentation the allocator deals with. The range is 13 pages (52KB), i.e. the maximum value seen was 2447 pages (9.56 MB). That is without taking any actual measurements, just instantiating the benchmarking process and processing command line parameters.
 
