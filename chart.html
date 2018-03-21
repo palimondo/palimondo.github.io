@@ -156,7 +156,7 @@
             <tbody id="stats" class="stats">
             </tbody>
           </table>
-          <!-- <div class="ct-chart ct-square sparkline" id="sparkline"></div> -->
+          <div class="ct-chart ct-square sparkline hide" id="sparkline"></div>
         </div>
         <div class="plots">
 	        <div class="histogram">
@@ -949,16 +949,19 @@ function plotSparkline(line, ss) {
   var {width, height} = window.getComputedStyle(line)
   var [width, height] = [width, height].map(x => parseInt(x))
   return Plotly.newPlot(
-    line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot)
+    $('sparkline'), [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot)
+    // line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot)
     .then(gd => Plotly.toImage(gd, {width, height, scale}))
-    .then(imgUrl => { clearChildren(line).style =
+    .then(imgUrl => { line.style =
+    // .then(imgUrl => { clearChildren(line).style =
       `background: url("${imgUrl}") center center no-repeat; background-size:contain`})
+    .then(_ => Plotly.purge($('sparkline')))
 }
 
 function plotLags() {
   let lag = $('lag');  if (isHidden(lag)) return wait(0)
   return Plotly.newPlot(
-    lag, traceLag(currentlySelected().series, 1), axisFormat(), noModeBar)
+    lag, traceLag(currentlySelected().series, 1), axisFormat(), join(noModeBar, {staticPlot: false}))
 }
 
 function plotRuntimes() {
