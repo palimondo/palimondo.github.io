@@ -1127,7 +1127,10 @@ function layoutSansAxis() {
   f.margin.l = 5
   return f
 }
-const noModeBar = {displayModeBar: false,}
+const noModeBar = {
+  displayModeBar: false,
+  staticPlot: (getParam('hide', null) !== null) // when embedding
+}
 
 let chart = $('chart')
 let histogram = $('histogram')
@@ -1163,6 +1166,7 @@ function updateParam(name, value) {
 getParam('hide').split(' ').filter(s => s.length > 0).forEach(c =>
   Plotly.d3.selectAll(`.${c}, #${c}`).classed('hide', true)
 )
+
 if (getParam('hide', null)) { // inferring embedding context
   Plotly.d3.select('body').classed('embedded', true)
 }
