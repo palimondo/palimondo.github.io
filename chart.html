@@ -24,7 +24,7 @@
       .ct-series {opacity: 0.5}
       .all-series {fill: Highlight; stroke: Highlight; opacity: 1}
       .selected, tr.selected {background-color: Highlight; color: HighlightText}
-      .selected .sparkline {outline: auto; background-color: white;}
+      .selected .sparkline {outline: auto; background-color: white !important;}
       .selected td:nth-child(n+11):nth-child(-n+16) {
         background: linear-gradient(to bottom, Highlight 0%, Highlight 10%,
           white 10%, white 90%, rgba(0,0,0,0) 90%, rgba(0,0,0,0) 100%)
@@ -945,8 +945,14 @@ function traceLag(s, l) {
 
 function plotSparkline(line, ss) {
   if (isHidden($('stats'))) return wait(0)
+  let scale = window.devicePixelRatio || 1
+  var {width, height} = window.getComputedStyle(line)
+  var [width, height] = [width, height].map(x => parseInt(x))
   return Plotly.newPlot(
     line, [traceRuntime(ss, 0.7)], sparklineLayoutFor(ss), staticPlot)
+    .then(gd => Plotly.toImage(gd, {width, height, scale}))
+    .then(imgUrl => { clearChildren(line).style =
+      `background: url("${imgUrl}") center center no-repeat; background-size:contain`})
 }
 
 function plotLags() {
@@ -1256,7 +1262,7 @@ fetch(logFile)
 })
 
 function plotSparklines() {
-  // return sparklines.reduce((p1, p2) => p1.then(wait).then(p2), wait(1000))
+  return sparklines.reduce((p1, p2) => p1.then(wait).then(p2), wait(1000))
 }
 
 const isHidden = e => e.offsetParent === null
