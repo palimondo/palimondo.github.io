@@ -78,4 +78,4 @@ The first two, [`ClassArrayGetter`](https://github.com/apple/swift/blob/master/b
 
 Rather than automatically correct for the setup overhead, I believe it is best to manually audit the benchmarks from the above table and reassess what should be measured and what should be moved to the setup function outside the main workload.
 
-Next: [Memory Use](memory-use.md)<br/>
+Next: [Memory Use](memory-use.md)
