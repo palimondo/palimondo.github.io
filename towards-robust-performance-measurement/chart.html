@@ -125,7 +125,8 @@
       </div>
       <button onclick="$('benchmark').selectedIndex--;">&#10094;</button>
       <button onclick="$('benchmark').selectedIndex++;">&#10095;</button>
-      <select id="benchmark" name="f" onchange="document.forms[0].submit()"></select>
+      <select id="benchmark" name="b" onchange="document.forms[0].submit()"></select>
+      <input id="seriesVariant" name="v" type="hidden" />
       <h1 id="title">Benchmark</h1>
     </form>
       <aside>
@@ -345,7 +346,7 @@ function selectSeries(s){
       updateParam('overhead', s.checked)
       precomputeAllStats()
       populateStatsTable()
-      plotSparklines()
+      wait(1).then(plotSparklines)
     } else {
       $('series').className = `ct-label ${s.id}`
       updateParam('outliers', s.id === 'clean' ? 'clean' : null)
@@ -577,7 +578,7 @@ function setupOverhead() {
     // let setup = 2*(ti-tj)
     let setup = (i * j * (ti - tj)) / (j - i)
     let ratio = setup/ti
-    if (ratio > 0.05 || allSeries.cleanStats.iqr * 2 < setup) {
+    if (ratio > 0.05 || round(allSeries.cleanStats.iqr * 1.2) < setup) {
       let label = $('overheadLabel')
       label.innerHTML += ` <span class='ct-label'>${setup}µs (${round(ratio*100, 1)}%) `
       allSeries.setup_overhead = setup
@@ -1244,7 +1245,7 @@ function computeStatsFromData(data) {
   }
 
 }
-let logFile = getParam('f', `${getParam('b')} ${getParam('v')}.json`)
+let logFile = getParam('f', `${getParam('v')}/${getParam('b')} ${getParam('v')}.json`)
 let logFileComponents = logFile.split(' ')
 let fileSuffix = logFileComponents.length ? logFileComponents[1] : ''
 let variant = fileSuffix.length ? fileSuffix.split('.')[0] : ''
@@ -1280,6 +1281,7 @@ function generateNavigationForm(){ // Navigation form
 
   let benchmarkName = allSeries.name.split(' ')[0]
 
+  $('seriesVariant').value = getParam('v', fileSuffix)
   var benchmarks
   fetch('benchmarks.json').then(function(response) {
     return response.json();
@@ -1287,7 +1289,7 @@ function generateNavigationForm(){ // Navigation form
     benchmarks = data
     const option = (t) => {
       let o = document.createElement('option')
-      o.value = t + ' ' + fileSuffix
+      o.value = t
       o.text = t
       return o
     }

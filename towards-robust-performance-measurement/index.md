@@ -21,7 +21,7 @@ First a summary of the status quo, to establish shared understanding of the issu
 ## Anatomy of a Swift Benchmark Suite
 Compiled benchmark suite consists of 3 binary files, one for each tracked optimization level: `Benchmark_O`, `Benchmark_Onone`, `Benchmark_Osize` (recently changed from `Benchmark_Ounchecked`). I’ll refer to them collectively as `Benchmark_X`. You can invoke them manually or through `Benchmark_Driver`, which is a Python utility that adds more features like log comparison to detect improvements and regressions between Swift revisions.
 
-There are hundreds of microbenchmarks (471 at the time of this writing) that exercise small portions of the language or standard library. They can be executed individually by specifying their name or as a whole suite, usually as part of the pre-commit check done by CI bots using the `Benchmark_Driver`. 
+There are hundreds of microbenchmarks (471 at the time of this writing) that exercise small portions of the language or standard library. They can be executed individually by specifying their name or as a whole suite, usually as part of the pre-commit check done by CI bots using the `Benchmark_Driver`.
 
 All benchmarks have main performance test function that was historically prefixed with `run_` and is now registered using `BenchmarkInfo` to be recognized by the test harness as part of the suite. The `run_` method takes single parameter `N: Int` —the number of iterations to perform. Each benchmark takes care of this individually, usually by wrapping the main workload in a `for` loop. The `N` is normally determined by the harness so that the **benchmark runs for approximately one second** per reported sample. It can also be set manually by passing `--num-iters` parameter to the `Benchmark_X` (or `-i` parameter to the `Benchmark_Driver`). The execution of the benchmark for `N` iterations is then timed by the harness, which reports the measured time divided by `N`, making it the **average time per iteration**. This is one sample.
 
@@ -39,9 +39,9 @@ Sometimes improved compiler optimizations kick in and eliminate main workload of
 When `Benchmark_Driver` runs the `Benchmark_X`, it does so through `time` utility in order to measure memory consumption of the test. It is reported in the log as `MAX_RSS` — maximum resident set size. But this measurement is currently not reported in the benchmark summary from CI on Github and is not publicly tracked, because it is unstable due to the auto-scaling of the measured benchmark loop: the test harness determines the number of iterations to run once per sample depending on the time it took to execute first iteration, the **memory consumption is** [**unstable between samples**](https://github.com/apple/swift/pull/8793#issuecomment-295805969) (not to mention the differences between baseline and branch).
 
 ## The Experiment So Far
-These are the results from exploring the above mentioned issues performed on an [experimental branch][vk-branch]. All the work so far was done in Python, in the [`Benchmark_Driver`](http://bit.ly/VK-BD) and related [`compare_perf_tests.py`](http://bit.ly/VK-cpt) scripts, without modification of the Swift files in the benchmark suite (*[except a bugfix](https://github.com/apple/swift/pull/12415) to make Benchmark_X run with `--num_iters=1`*). 
+These are the results from exploring the above mentioned issues performed on an [experimental branch][vk-branch]. All the work so far was done in Python, in the [`Benchmark_Driver`](http://bit.ly/VK-BD) and related [`compare_perf_tests.py`](http://bit.ly/VK-cpt) scripts, without modification of the Swift files in the benchmark suite (*[except a bugfix](https://github.com/apple/swift/pull/12415) to make Benchmark_X run with `--num_iters=1`*).
 
-`Benchmark_X` supports `--verbose` option that reports time measured for each sample and the number of iterations used, in addition to the normal benchmark’s report that includes only the summary of minimum, maximum, mean, standard deviation and median values. I’ve extracted log parsing logic from `Benchmark_Driver` into [`LogParser`](http://bit.ly/VK-LogParser) class and taught it to read the verbose output. 
+`Benchmark_X` supports `--verbose` option that reports time measured for each sample and the number of iterations used, in addition to the normal benchmark’s report that includes only the summary of minimum, maximum, mean, standard deviation and median values. I’ve extracted log parsing logic from `Benchmark_Driver` into [`LogParser`](http://bit.ly/VK-LogParser) class and taught it to read the verbose output.
 
 Next I've created [`PerformanceTestSamples`](http://bit.ly/VK-PTS) class that computes the statistics from the parsed verbose output in order to understand what is causing the instability of the benchmarking.
 
@@ -73,7 +73,7 @@ Intrigued by the variance between various sampling techniques in my initial test
 
 The sampling strategies are defined in the helper script [`diag.py`](https://github.com/palimondo/palimondo.github.io/blob/master/diag.py) that uses the [`BenchmarkDriver`](http://bit.ly/VK-BD) to collect and save all the measurements. Benchmark samples are stored in individual JSON files and can be visualized using the [`chart.html`](https://github.com/palimondo/palimondo.github.io/blob/master/chart.html) which fetches the raw data and displays various plots and numerical statistics. Follow the [links below](#raw-data) to explore the complete dataset in web browser yourself.
 
-The individual series of measurements for a given benchmark are labeled with letters of alphabet after the number of iterations used for the measurement. For example `i4b` is the second run of benchmark measurements lasting approximately 1 second, performed with iteration count of four. The series table under the main chart is always sorted by ascending iteration count and does not necessarily reflect the order of how the measurements were taken. 
+The individual series of measurements for a given benchmark are labeled with letters of alphabet after the number of iterations used for the measurement. For example `i4b` is the second run of benchmark measurements lasting approximately 1 second, performed with iteration count of four. The series table under the main chart is always sorted by ascending iteration count and does not necessarily reflect the order of how the measurements were taken.
 
 <dl>
 <dt><strong>10 Series</strong></dt>
@@ -88,13 +88,13 @@ The individual series of measurements for a given benchmark are labeled with let
 </dl>
 
 #### Controlling the Load
-Getting a calm machine during my experiments was very difficult. I had to resort to pretty extreme measures: close all applications (including menu bar apps), quit the Finder(!), disable Python‘s automatic garbage collection and control it manually so that it didn’t interfere with `Benchmark_O`’s measurements. 
+Getting a calm machine during my experiments was very difficult. I had to resort to pretty extreme measures: close all applications (including menu bar apps), quit the Finder(!), disable Python‘s automatic garbage collection and control it manually so that it didn’t interfere with `Benchmark_O`’s measurements.
 
 Producing comparable results during the whole suite measurement was tricky. I have noticed that measurement quality (reflected in very low ICS) mysteriously improved for later benchmarks, once the display went to sleep. I figured out that getting down to 100 ICS/s is possible when you minimize the Terminal window during the measurement for some reason. With the Terminal window open, the mean ICS/s was around 300. To control for this effect, the display sleep was disabled. For the best possible result (the “a series” below) the Terminal window was also minimized.
 
 Python’s [`multiprocessing.Pool`](https://docs.python.org/2.7/library/multiprocessing.html#module-multiprocessing.pool) was used to control the amount of contention between concurrently running processes competing for the 2 physical CPU cores. Varying the amount of worker processes that measured multiple benchmarks in parallel provided comparable and relatively constant machine load for the duration of the whole benchmark suite execution.
 
-Samples in series **a** and **b** had only **1 process** performing the measurements. The samples collected in the **c** series had **2 processes** running benchmarks concurrently and taking the measurements on a 2 core CPU. Series **d** had **3 processes** and series **e** had **4 processes** measuring concurrently running benchmarks competing for the 2 physical CPU cores. 
+Samples in series **a** and **b** had only **1 process** performing the measurements. The samples collected in the **c** series had **2 processes** running benchmarks concurrently and taking the measurements on a 2 core CPU. Series **d** had **3 processes** and series **e** had **4 processes** measuring concurrently running benchmarks competing for the 2 physical CPU cores.
 
 All this is meant to simulate the effect of varying system load, that is outside of our control. For example the CI bots that perform the Swift Benchmark Suite measurements are also running the continuous integration server Jenkins, which uses Java as its runtime environment. We have no control over the Java’s garbage collection that will run concurrently to our benchmark measurements — we have to design our measurement process to be resilient and robust in this environment.
 
@@ -104,11 +104,11 @@ The complete set of Swift Benchmark Suite samples collected with a given strateg
 
 | Series | a | b | c | d | e |
 |---:|---|---|---|---|---|
-| **10** | [a10](chart.html?f=Ackermann+a10.json) | [b10](chart.html?f=Ackermann+b10.json) | [c10](chart.html?f=Ackermann+c10.json) | [d10](chart.html?f=Ackermann+d10.json) | [e10](chart.html?f=Ackermann+e10.json) |
-| **12** | [a12](chart.html?f=Ackermann+a12.json) | [b12](chart.html?f=Ackermann+b12.json) | [c12](chart.html?f=Ackermann+c12.json) | [d12](chart.html?f=Ackermann+d12.json) | [e12](chart.html?f=Ackermann+e12.json) |
-| **10R** | [a10R](chart.html?f=Ackermann+a10R.json) | [b10R](chart.html?f=Ackermann+b10R.json) | [c10R](chart.html?f=Ackermann+c10R.json) | [d10R](chart.html?f=Ackermann+d10R.json) | [e10R](chart.html?f=Ackermann+e10R.json) |
+| **10** | [a10](chart.html?b=Ackermann&v=a10) | [b10](chart.html?b=Ackermann&v=b10) | [c10](chart.html?b=Ackermann&v=c10) | [d10](chart.html?b=Ackermann&v=d10) | [e10](chart.html?b=Ackermann&v=e10) |
+| **12** | [a12](chart.html?b=Ackermann&v=a12) | [b12](chart.html?b=Ackermann&v=b12) | [c12](chart.html?b=Ackermann&v=c12) | [d12](chart.html?b=Ackermann&v=d12) | [e12](chart.html?b=Ackermann&v=e12) |
+| **10R** | [a10R](chart.html?b=Ackermann&v=a10R) | [b10R](chart.html?b=Ackermann&v=b10R) | [c10R](chart.html?b=Ackermann&v=c10R) | [d10R](chart.html?b=Ackermann&v=d10R) | [e10R](chart.html?b=Ackermann&v=e10R) |
 
-The *a* and *b* series both run in 1 process, except that for the *a* series measurement the Terminal window was minimized. 
+The *a* and *b* series both run in 1 process, except that for the *a* series measurement the Terminal window was minimized.
 
 The number of involuntary context switches (ICS) is just a proxy for machine load. When we normalize the ICS per second, this measure for a series in a given system load level is almost normally distributed. The *a* series is very tightly packed with mean value at 90 ICS/s (±10). The *b* series has two [modes](https://en.wikipedia.org/wiki/Mode_%28statistics%29): one sharp peak at 120 ICS/s (±10) and another wide peak at 350 ICS/s (±80). The ICS spread in *c* series is very wide with mode at 700 (±280).
 
@@ -121,9 +121,9 @@ The number of involuntary context switches (ICS) is just a proxy for machine loa
 
 Even on a fully saturated processor, the number of context switches does not often exceed 1000 ICS during one benchmark measurement, but the interruptions get longer. This is why the ICS values normalized to one second gets lower as the mean runtime increases for series *d* and *e*.
 
-Another set of samples with varying number of iterations per run, from 1 up, in powers of 2 until the only two samples are collected, are available in the [**iters**](chart.html?f=Ackermann+iters.json) series. The machine load during this measurement was roughly equivalent to the *c* series above (Mode 600 ICS/s, ±200).
+Another set of samples with varying number of iterations per run, from 1 up, in powers of 2 until the only two samples are collected, are available in the [**iters**](chart.html?b=Ackermann&v=iters) series. The machine load during this measurement was roughly equivalent to the *c* series above (Mode 600 ICS/s, ±200).
 
-As an ideal baseline for the status quo, the collection of 4 series with 20 automatically scaled (`num-samples=0`) samples was driven by a [shell script](measure_i0.sh) that saved logs in individual files for later processing is collected in the [**i0** series](chart.html?f=Ackermann+i0.json). This is roughly equivalent to 4 whole benchmark suite executions on a machine with load corresponding to the *a* series above. 
+As an ideal baseline for the status quo, the collection of 4 series with 20 automatically scaled (`num-samples=0`) samples was driven by a [shell script](measure_i0.sh) that saved logs in individual files for later processing is collected in the [**i0** series](chart.html?f=Ackermann+i0.json). This is roughly equivalent to 4 whole benchmark suite executions on a machine with load corresponding to the *a* series above.
 
 Remember that *a* level of system load is never attainable on CI bots running Java, even if we take care of macOS system’s background processes like (Spotlight indexing and Time Machine backups), but is used here to establish the rough equivalence between the ideal version of status quo and proposed changes to the measurement process.
 
