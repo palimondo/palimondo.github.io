@@ -1,4 +1,3 @@
-Previous: [Analysis](analysis.md)
 ### Exclude Outliers
 With the increased sampling frequency, it is possible to detect outliers and deal with them. Let’s examine the `i4` series from Calculator benchmark above in more detail.
 
@@ -30,4 +29,5 @@ Single one-second measurement, even when it collects thousands of individual sam
 
 *There are two additional charts at the bottom: a histogram with bins sized to standard deviation and a [**lag plot**](https://www.itl.nist.gov/div898/handbook/eda/section3/lagplot.htm) that checks whether a data set or time series is random or not. This completes the demonstration of [exploratory data analysis techniques](https://www.itl.nist.gov/div898/handbook/eda/section3/eda33.htm) implemented in the `chart.html`. If you follow the numbered links, they open a standalone chart, which also includes navigation between the various series and benchmarks as well as zoom tools that were hidden in the embedded context of this document. I encourage you to explore the benchmark dataset in this browser based viewer, which is fully responsive, so that you can use it also on tablets and mobile phones. The state of the viewer is fully encoded in the URL, so if you find something interesting you want to discuss, just share the full URL.*
 
-Next: [Exclude Setup Overhead](exclude-setup-overhead.md)<br/>
+Previous: [Analysis](analysis.md)<br/>
+Next: [Exclude Setup Overhead](exclude-setup-overhead.md)

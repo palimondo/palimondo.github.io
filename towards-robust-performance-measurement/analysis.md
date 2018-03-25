@@ -1,4 +1,3 @@
-Previous: [Introduction](intro.md)
 ## Analysis
 To understand what’s behind the mean value reported by our status quo measurement process, we’ll examine single benchmark with the newly increased sampling frequency. All eleven series of samples in the chart below represent ~1s (0.7–0.8s in this case) of timing the benchmark [`Calculator`](https://github.com/apple/swift/blob/master/benchmark/single-source/Calculator.swift), with varying number of iterations. This yields progressively less samples (`n` in the table) as the number of iterations averaged in the reported time increases (denoted by `i#` in the series’ name). Remember that our current measurement process reports only the mean value (**x̅** column) from 1 second of execution for each of the series.
 
@@ -25,4 +24,5 @@ Due to the systemic measurement error introduced from preemptive multitasking, w
 
 I think it is safe to conclude that averaging multiple samples together, i.e. measuring with `num-iters` > 1, serves no useful purpose and only precludes the separation of signal from the noise.
 
+Previous: [Introduction](index.md)<br/>
 Next: [Exclude Outliers](exclude-outliers.md)

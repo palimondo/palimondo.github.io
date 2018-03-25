@@ -1,4 +1,3 @@
-Previous: [Exclude Outliers](exclude-outliers.md)
 ### Exclude Setup Overhead
 Some benchmarks need to perform additional setup work before their main workload. Historically, this was dealt with by sizing the main workload so that it dwarfs the setup, making it negligible. Setup is performed before the main work loop, and its impact is further lessened by amortizing it over the `N` measured iterations.
 
@@ -14,7 +13,7 @@ We can detect the setup overhead by picking smallest minimum from series with sa
 
 <iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6" name="ReversedArray+a10R+raw" frameborder="0" width="100%" height="430"></iframe>
 
-We can normalize the series with different `num-iters` by subtracting the corresponding fraction of the setup from each sample. The median value after we exclude the setup overhead is 190µs which exactly matches the baseline from the [i0 Series](chart.html?b=ReversedArray&v=i0).<sup>[8](chart.html?b=ReversedArray&v=iters&ry=188.6+376.6&overhead=true)</sup>
+We can normalize the series with different `num-iters` by subtracting the corresponding fraction of the setup from each sample. The median value after we exclude the setup overhead is 190µs which exactly matches the baseline from the [i0 Series](chart.html?b=ReversedArray&v=i0).<sup>[8](chart.html?b=ReversedArray&v=a10R&ry=188.6+376.6&overhead=true)</sup>
 
 <iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6&overhead=true" name="ReversedArray+a10R+corrected" frameborder="0" width="100%" height="430"></iframe>
 
@@ -72,10 +71,9 @@ Benchmarks from Swift Benchmark Suite with setup overhead in % relative to the r
 | ArrayAppendToFromGeneric | [1%](chart.html?b=ArrayAppendToFromGeneric&v=a10 "16µs") | [1%](chart.html?b=ArrayAppendToFromGeneric&v=a10R "22µs") | [0%](chart.html?b=ArrayAppendToFromGeneric&v=a12 "10µs") |
 | PrefixWhileAnyCollectionLazy | [1%](chart.html?b=PrefixWhileAnyCollectionLazy&v=a10 "2µs") | [1%](chart.html?b=PrefixWhileAnyCollectionLazy&v=a10R "2µs") | [1%](chart.html?b=PrefixWhileAnyCollectionLazy&v=a12 "2µs") |
 
-The first two, [`ClassArrayGetter`](https://github.com/apple/swift/blob/master/benchmark/single-source/ClassArrayGetter.swift) and [ReversedDictionary](https://github.com/apple/swift/blob/master/benchmark/single-source/ReversedCollections.swift) are clearly cases of incorrectly written benchmarks where the compiler’s optimizations eliminated the main workload and we are only measuring the setup overhead.
+The first two, [`ClassArrayGetter`](https://github.com/apple/swift/blob/master/benchmark/single-source/ClassArrayGetter.swift) and [ReversedDictionary](https://github.com/apple/swift/blob/master/benchmark/single-source/ReversedCollections.swift), are clearly cases of incorrectly written benchmarks where the compiler’s optimizations eliminated the main workload and we are only measuring the setup overhead. Many other are cases of testing a certain feature of `Array` or `Array`-backed type, where the initial creation of the array ends up significant compared to the other fast methods the Array provides.
 
-[PR 12404](https://github.com/apple/swift/pull/12404/commits) has added the ability to perform setup and tear down outside of the measured performance test that is so far used by one benchmark.
+[PR 12404](https://github.com/apple/swift/pull/12404/commits) has added the ability to perform setup and tear down outside of the measured performance test that is so far used by one benchmark. Rather than automatically correct for the setup overhead, I believe it is best to manually audit the benchmarks from the above table and reassess what should be measured and what should be moved to the setup function outside the main workload.
 
-Rather than automatically correct for the setup overhead, I believe it is best to manually audit the benchmarks from the above table and reassess what should be measured and what should be moved to the setup function outside the main workload.
-
+Previous: [Exclude Outliers](exclude-outliers.md)<br/>
 Next: [Memory Use](memory-use.md)

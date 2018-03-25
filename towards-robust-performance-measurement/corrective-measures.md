@@ -1,4 +1,3 @@
-Previous: [Memory Use](memory-use.md)
 ## Corrective Measures
 Given the fact Swift Benchmark Suite is a set of **microbenchmarks**, we are measuring effects that are manifested in **microseconds**. We can significantly increase the robustness of our measurement process by using proper statistical methods. Necessary prerequisite is having a representative sample population of reasonable size. From the experiment analyzed in previous sections it is apparent that we can make the measurement process resilient to the effects of varying system load if the benchmarked workload stays in range of hundreds of milliseconds, up to few thousand. Above that it becomes impossible to separate the signal from noise on a heavily contested CPU.
 
@@ -24,3 +23,5 @@ Based on the preceding analysis I suggest we take the following corrective measu
 * Introduce **automated benchmark validation** to ensure individual benchmarks conform to the expected requirements, which will be performed for newly added tests during regular CI benchmarks and on the whole benchmark suite as a part of the validation tests. See [`BenchmarkDoctor`](https://bit.ly/VK-BD#L163) for a prototype implementation.
 TK how to detect regressions and improvements?
 TK Further improvements: detecting modes
+
+Previous: [Memory Use](memory-use.md)
