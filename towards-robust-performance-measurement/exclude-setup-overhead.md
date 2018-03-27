@@ -76,4 +76,4 @@ The first two, [`ClassArrayGetter`](https://github.com/apple/swift/blob/master/b
 [PR 12404](https://github.com/apple/swift/pull/12404/commits) has added the ability to perform setup and tear down outside of the measured performance test that is so far used by one benchmark. Rather than automatically correct for the setup overhead, I believe it is best to manually audit the benchmarks from the above table and reassess what should be measured and what should be moved to the setup function outside the main workload.
 
 Previous: [Exclude Outliers](exclude-outliers.md)<br/>
-Next: [Memory Use](memory-use.md)
+Next: [Detecting Changes](detecting-changes.md)

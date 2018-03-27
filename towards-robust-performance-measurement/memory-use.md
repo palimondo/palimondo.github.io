@@ -9,5 +9,5 @@ With the exception of 7 benchmarks, all benchmarks have constant memory use inde
 
 The `Array2D` benchmark has significant memory use range of 7MB (3292 — 5101 pages or 12.9 MB — 19.9 MB)! It creates a 1K by 1K `[[Int]]`, without reserving a capacity. The  pure `Int` storage is at least 8 MB, plus there is some constant overhead per Array. I guess the variation depends on how big contiguous memory regions the allocator gets, while the arrays are growing when `append` is called and they sometimes need to be copied to new region. Though I’m not sure this is the point of the test and it maybe should be rewritten with reserved capacity for stable memory use.
 
-Previous: [Exclude Setup Overhead](exclude-setup-overhead.md)<br/>
+Previous: [Detecting Changes](detecting-changes.md)<br/>
 Next: [Corrective Measures](corrective-measures.md)
