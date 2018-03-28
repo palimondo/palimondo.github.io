@@ -1,24 +1,24 @@
 # Towards Robust Performance Measurement
-
-I’m kind of new around here, still learning about how the project works. On the suggestion from Ben Cohen I started contributing code around Swift Benchmark Suite (more benchmarks for `Sequence` protocol along with [support for GYB in benchmarks](https://github.com/apple/swift/pull/8641)). I’ve filed [SR-4600][sr-4600] back in April of 2017. After rewriting most of the `compare_perf_test.py`, converting it from [scripting style to OOP module][pr-8991] and adding [full unit test coverage][pr-10035], I’ve been working on improving the robustness of performance measurements with Swift benchmark suite on [my own branch][vk-branch] since the end of June.
-
-[sr-4600]: https://bugs.swift.org/browse/SR-4600 "Performance comparison should use MEAN and SD for analysis"
-[pr-8991]: https://github.com/apple/swift/pull/8991 "Fix SR-4601 Report Added and Removed Benchmarks in Performance Comparison"
-[pr-10035]: https://github.com/apple/swift/pull/10035 "Added documentation and test coverage."
-
-One of my PRs in the benchmarking area was [blocked](https://github.com/apple/swift/pull/12415) by @gottesmm TK (@Michael_Gottesman), pending wider discussion on swift-dev, I’m guessing because to err on the conservative side is safer than letting me run wild around benchmarks… So the linked document is *rather long* way to demonstrate what changes to the benchmark suite and our measurement process will, in my opinion, give us more robust results in the future.
-
-I apologize that the report deals with state of Swift Benchmark Suite from autumn 2018, keeping the tree up to date once the commits I was depending required lengthy manual conflict resolution I gave up on that and kept focusing on the experiment, rather than futile chase of the tip of the tree…
-
-----
+[Pavol Vaskovic](mailto:pali@pali.sk)
 
 This document describes the state of Swift Benchmark Suite around the autumn of 2017 and discusses work to improve the robustness of performance measurements done on [experimental branch][vk-branch] since the end of June 2017.
 
 [vk-branch]: http://bit.ly/pali-VK "voight-kampff"
 
+### Table of Contents
+* [Anatomy of the Swift Benchmark Suite](#anatomy-of-the-swift-benchmark-suite)
+* [Issues with the Status Quo](#issues-with-the-status-quo)
+* [The Experiment So Far](#the-experiment-so-far)
+* [Analysis](analysis.md)
+* [Exclude Outliers](exclude-outliers.md)
+* [Exclude Setup Overhead](exclude-setup-overhead.md)
+* [Detecting Changes](detecting-changes.md)
+* [Memory Use](memory-use.md)
+* [Corrective Measures](corrective-measures.md)
+
 First a summary of the status quo, to establish shared understanding of the issues.
 
-## Anatomy of a Swift Benchmark Suite
+## Anatomy of the Swift Benchmark Suite
 Compiled benchmark suite consists of 3 binary files, one for each tracked optimization level: `Benchmark_O`, `Benchmark_Onone`, `Benchmark_Osize` (recently changed from `Benchmark_Ounchecked`). I’ll refer to them collectively as `Benchmark_X`. You can invoke them manually or through `Benchmark_Driver`, which is a Python utility that adds more features like log comparison to detect improvements and regressions between Swift revisions.
 
 There are hundreds of microbenchmarks (471 at the time of this writing) that exercise small portions of the language or standard library. They can be executed individually by specifying their name or as a whole suite, usually as part of the pre-commit check done by CI bots using the `Benchmark_Driver`.
@@ -47,7 +47,7 @@ Next I've created [`PerformanceTestSamples`](http://bit.ly/VK-PTS) class that co
 
 At that point I was visualizing the samples with graphs in Numbers, but it was very cumbersome. So I’ve created [helper script](https://github.com/palimondo/palimondo.github.io/blob/master/diag.py) that exports the samples as JSON and set out to display charts in a web browser, first using [Chartist.js](https://gionkunz.github.io/chartist-js/), later fully replacing it with the [Plotly](https://plot.ly) library.
 
-This dive into visualizations was guided by the [NIST Engineering Statistics Handbook](http://www.itl.nist.gov/div898/handbook/index.htm), the section on [**Exploratory Data Analysis**](http://www.itl.nist.gov/div898/handbook/eda/eda.htm) proved especially invaluable.
+This dive into visualizations was guided by the [NIST Engineering Statistics Handbook](https://www.itl.nist.gov/div898/handbook/index.htm), the section on [**Exploratory Data Analysis**](https://www.itl.nist.gov/div898/handbook/eda/eda.htm) proved especially invaluable.
 
 ### Increased Measurement Frequency and Scaling with Brackets
 It is possible to trade `num-iters` for `num-samples` — while maintaining the same ~1 second run time — effectively increasing the measurement frequency. For example, if the auto-scale sets the `N` to 1024, we can get 1 sample to report average value per 1024 iterations, or we can get 1024 samples of raw measured time for single iteration, or anything in-between.
@@ -58,9 +58,7 @@ Approximating the automatic scaling of the benchmark to make it run for ~1s like
 * Use the minimum runtime to compute the number of samples that make the benchmark run for ~1s
 * Round the number of samples to the nearest power of two
 
-The `Benchmark_X` is then executed with `num-iters=1` and the specified `num-samples` parameter. This results in effective run times around 1 second per benchmark. We can also run with `num-iters=2` and take half as many samples, still maintaining 1s runtime.
-
-Benchmarks can jump between brackets of the number of samples taken on different runs (eg. master branch vs. PR), but measurements are always done with fixed `num-iters` depending on measurement strategy, as described below.
+The `Benchmark_X` is then executed with `num-iters=1` and the specified `num-samples` parameter. This results in effective run times around 1 second per benchmark. We can also run with `num-iters=2` and take half as many samples, still maintaining 1s runtime. Benchmarks can jump between brackets of the number of samples taken on different runs (eg. master branch vs. PR), but measurements are always done with fixed `num-iters` depending on measurement strategy, as described below. (*Maximum number of gathered samples was capped at 4000, though the display in `chart.html` trims them further to 2000 per series, because the browser wasn’t able to display more than 20000 samples at the same time in reasonable time on my machine.*)
 
 ### Monitoring the Environment
 Looking at the way we use `time` command invocation of `Benchmark_X` from `Benchmark_Driver` to monitor memory consumption, I noticed that it also reports the number of voluntary and involuntary context switches. So I have started to collect this measure as proxy for sample quality that reflects the load of the system, the amount of contention between competing processes. The number of involuntary context switches (**ICS**) is about 100 per second when my machine is absolutely calm and sometimes reaches over 1000/s when my machine is busy. The lower bound matches the [anecdotal time slice](https://www.motherboardpoint.com/threads/time-slice-in-os-x.253761/) of 10 ms (10 000 μs) for Mac OS’s scheduler. The number of ICS correlates with the variability of samples.
@@ -71,7 +69,7 @@ The measurements were performed in macOS Sierra running on the Late 2008 MacBook
 #### Sampling Strategies
 Intrigued by the variance between various sampling techniques in my initial tests, I did run several different data collection strategies (varying ascending and descending iteration counts, interleaved or in series) to determine if `--num-iters` is a causal factor behind it. It doesn’t seem to have a direct effect. Sometimes the later series reach a different stable performance level after few seconds of successive execution. This level can be better or worse. Given this happens after few seconds (3-6), i.e. in the 3rd—6th series measured, I’m not sure if this effect can be attributed to the branch prediction in the CPU.
 
-The sampling strategies are defined in the helper script [`diag.py`](https://github.com/palimondo/palimondo.github.io/blob/master/diag.py) that uses the [`BenchmarkDriver`](http://bit.ly/VK-BD) to collect and save all the measurements. Benchmark samples are stored in individual JSON files and can be visualized using the [`chart.html`](https://github.com/palimondo/palimondo.github.io/blob/master/chart.html) which fetches the raw data and displays various plots and numerical statistics. Follow the [links below](#raw-data) to explore the complete dataset in web browser yourself.
+The sampling strategies are defined in the helper script [`diag.py`](https://github.com/palimondo/palimondo.github.io/blob/master/robust-microbench/diag.py) that uses the [`BenchmarkDriver`](http://bit.ly/VK-BD) to collect and save all the measurements. Benchmark samples are stored in individual JSON files and can be visualized using the [`chart.html`](https://github.com/palimondo/palimondo.github.io/blob/master/chart.html) which fetches the raw data and displays various plots and numerical statistics. Follow the [links below](#raw-data) to explore the complete dataset in web browser yourself.
 
 The individual series of measurements for a given benchmark are labeled with letters of alphabet after the number of iterations used for the measurement. For example `i4b` is the second run of benchmark measurements lasting approximately 1 second, performed with iteration count of four. The series table under the main chart is always sorted by ascending iteration count and does not necessarily reflect the order of how the measurements were taken.
 

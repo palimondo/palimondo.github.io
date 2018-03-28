@@ -17,7 +17,7 @@ We can normalize the series with different `num-iters` by subtracting the corres
 
 <iframe src="chart.html?b=ReversedArray&v=a10R&hide=navigation+zoom+outliers+plots+stats+note&ry=188.6+376.6&overhead=true" name="ReversedArray+a10R+corrected" frameborder="0" width="100%" height="430"></iframe>
 
-However, our ability to detect overhead with this technique depends on its size relative to the sample variance. For this reason, small overheads get hidden under noisier machine. Some overhead becomes apparent only in the *a* Series and gets lost in noisier series. Another issue is that for larger overheads, when we subtract it, the corrected sample has higher the variance relative to other benchmarks with similar runtimes. This is because the sample dispersion is always relative to the runtime. When we subtract the constant overhead we get better runtime, but same dispersion (i.e. the IQR and standard deviation are unchanged).
+However, our ability to detect overhead with this technique depends on its size relative to the sample variance. Some small overhead is apparent only in the *a* Series and gets lost in noisier series. Another issue is that for larger overheads, when we subtract it, the corrected sample has higher variance relative to other benchmarks with similar runtimes. This is because the sample dispersion is always relative to the runtime. When we subtract the constant overhead we get better runtime, but same dispersion (i.e. the IQR and standard deviation are unchanged).
 
 Benchmarks from Swift Benchmark Suite with setup overhead in % relative to the runtime.
 *The % links open the `chart.html`; Hover over the links for absolute values in µs*:
