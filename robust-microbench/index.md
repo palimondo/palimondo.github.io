@@ -125,4 +125,6 @@ As an ideal baseline for the status quo, the collection of 4 series with 20 auto
 
 Remember that *a* level of system load is never attainable on CI bots running Java, even if we take care of macOS system’s background processes like (Spotlight indexing and Time Machine backups), but is used here to establish the rough equivalence between the ideal version of status quo and proposed changes to the measurement process.
 
+If you’d like to perform your own analysis, the complete dataset is available for download as a single archive [sbs_dataset_1.0.zip](sbs_dataset_1.0.zip).
+
 Next: [Analysis](analysis.md)
