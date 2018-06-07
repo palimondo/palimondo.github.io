@@ -118,9 +118,6 @@ def capped(samples):
     return min(samples, 4096)
 
 
-STRATS = ['ten', 'dozen', 'tenR', 'd10', 'd12', 'd10R']
-
-
 def perform_hidden(measurement, *args):
     """Minimize the Terminal window during measurement.
 
@@ -182,12 +179,18 @@ def series_ten(name, run_parameters):
 
 
 def series_tenR(name, run_parameters):
-    """"Measurement strategy that takes 5 i2 and 5 i1 series."""
+    """Measurement strategy that takes 5 i2 and 5 i1 series."""
     run_parameters = list(reversed(list(run_parameters)[:2]))
     num_series = [10] if len(run_parameters) < 2 else [5, 5]
     return [run_series(name, suffix, *parameters)
             for j, parameters in zip(num_series, run_parameters)
             for suffix in list('abcdefghij')[:j]]
+
+
+def series_iters(name, run_parameters):
+    """Measurement strategy that takes increasing i# series."""
+    return [run_series(name, '', *parameters)
+            for parameters in reversed(list(run_parameters))]
 
 
 def long(t):
@@ -271,6 +274,16 @@ def save_benchmarks(file_name='benchmarks.json'):
     """Save list of all benchmarks as JSON array."""
     with open(file_name, 'w') as f:
         json.dump(BD.all_tests, f,
+                  separators=(',', ':'))
+
+
+def save_variants(file_name='variants.json'):
+    """Save list of all series variants as JSON array."""
+    variants = [x+s for x in list('abcde') for s in ['10', '10R', '12']]
+    variants.append('i0')
+    variants.append('iters')
+    with open(file_name, 'w') as f:
+        json.dump(variants, f,
                   separators=(',', ':'))
 
 
@@ -362,6 +375,7 @@ def setup_overhead(results):
         (i, ti) = map(float, mins[0])
         # next higher num_iters
         (j, tj) = map(float, next(m for m in mins if m[0] > i))
+        assert(2*int(i) == int(j))
         setup = (i * j * (ti - tj)) / (j - i)
         ratio = setup / ti
         return (ir(setup), round(ratio, 5)) if setup > 0 else None
@@ -371,7 +385,10 @@ def setup_overhead(results):
 
 def test_stats(t, variant, outliers=False):
     t = t if isinstance(t, str) else BD.all_tests[(t - 1)]
+    import os
     file_name = t + ' ' + variant + '.json'
+    file_name = (file_name if os.path.exists(file_name) else
+                 variant + '/' + file_name)
     results = load_samples(file_name)
     stats = {'name': t, 'variant': variant,
              'num_samples': max([r.samples.count for r in results] or [0]),
@@ -390,7 +407,7 @@ def test_stats(t, variant, outliers=False):
     overhead = setup_overhead(results)
     if overhead:
         setup, ratio = overhead
-        if ratio > 0.05 or allClean.samples.iqr < setup:
+        if ratio > 0.05 or int(allClean.samples.iqr * 1.2) < setup:
             stats['setup_overhead'] = \
                 list(overhead) + [format_stats(all_stats(results, setup))]
 
