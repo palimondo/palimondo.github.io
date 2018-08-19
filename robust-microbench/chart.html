@@ -303,18 +303,16 @@ function lastNonNull(a) {
 // Icons
 const svgNS = 'http://www.w3.org/2000/svg'
 function createIcon(i) {
-    let iconHeight = i.ascent - i.descent,
-        icon = document.createElementNS(svgNS, 'svg'),
+    let icon = document.createElementNS(svgNS, 'svg'),
         path = document.createElementNS(svgNS, 'path');
 
     icon.setAttribute('style', 'fill: rgb(58, 153, 250); stroke: rgb(58, 153, 250);');
     icon.setAttribute('height', '2em');
     icon.setAttribute('width', '2em');
-    // icon.setAttribute('width', (i.width / iconHeight) + 'em');
-    icon.setAttribute('viewBox', [0, 0, i.width, iconHeight].join(' '));
+    icon.setAttribute('viewBox', [0, 0, i.width, i.height].join(' '));
 
     path.setAttribute('d', i.path);
-    path.setAttribute('transform', 'matrix(1 0 0 -1 0 ' + i.ascent + ')');
+    path.setAttribute('transform', i.transform);
     icon.appendChild(path);
 
     return icon;
