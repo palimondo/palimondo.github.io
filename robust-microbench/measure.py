@@ -23,19 +23,20 @@ named_strats = zip(['10', '10R', '12'],
 #    Terminal window)
 BD.args.optimization = 'O'
 # BD.args.optimization = 'Onone'
-strats = [(strat, 'xb' + name) for name, strat in named_strats]
+strats = [(strat, 'c' + name) for name, strat in named_strats]
 # strats = [(strat, 'a' + name + 'n') for name, strat in named_strats]
 # strats = [(series_iters, 'iters')]
 
-# tests = range(1, 4)
-tests = range(1, 472)
-pool = Pool(processes=1)  # processes for series: a,b=1 c=2, d=3, e=
+# tests = range(1, 4)  # save_stats will crash if these are not all tests
+tests = range(1, len(BD.all_tests) + 1)
+pool = Pool(processes=2)  # processes for series: a,b=1 c=2, d=3, e=
 
 # # The a Series is measured with minimized Terminal window:
 # perform_hidden(lambda: pool.map(measure_strat, [(t, s[0], s[1]) for s in
 #                                                 strats for t in tests]))
 # perform_hidden(lambda: [save_stats(s) for x, s in strats])
 
+print("Starting measurement...")
 # The b-e Series are measured with open Terminal window, display progress bar:
 total = len(tests)
 for s in strats:
