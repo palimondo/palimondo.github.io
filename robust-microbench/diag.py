@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import json
 import gc
+import os
 
 from math import log
 from Benchmark_Driver import BenchmarkDriver
@@ -15,8 +16,7 @@ class ArgsStub(object):
     def __init__(self):
         self.benchmarks = '1'
         self.filters = None
-        self.tests = ('/Users/mondo/Developer/swift-source/build/'
-                      'Ninja-ReleaseAssert/swift-macosx-x86_64/bin')
+        self.tests = os.path.dirname(os.path.abspath(__file__))
         self.optimization = 'O'
 
 
@@ -56,7 +56,7 @@ def calibrate(t):
     Returns the name of the benchmark and minimal runtime.
     """
     res = run(t)
-    return (res.name, run_args(adjusted_1s_samples(res.min)))
+    return (res.name, run_args(adjusted_1s_samples(res.samples.min)))
 
 
 def run(t, s=3, i=1, verbose=True):  # default s & i are for calibration
@@ -64,7 +64,7 @@ def run(t, s=3, i=1, verbose=True):  # default s & i are for calibration
     t = t if isinstance(t, str) else str(t)
     # import time
     # time.sleep(0.8)
-    r = BD.run(t, s, i, verbose, measure_environment=True)
+    r = BD.run(t, s, i, verbose, measure_memory=True)
     gc.collect()
     BD.last_run = r
     if r.name not in BD.results:
@@ -94,6 +94,11 @@ def series(result, name=None):
         'voluntary_cs': (result.voluntary_cs
                          if hasattr(result, 'voluntary_cs') else None),
         'max_rss': result.max_rss if hasattr(result, 'max_rss') else None,
+        'setup': result.setup if hasattr(result, 'setup') else None,
+        'yield_before': ([yielded.before_sample for yielded in result.yields]
+                         if result.yields else []),
+        'yield_after': ([yielded.after for yielded in result.yields]
+                        if result.yields else []),
         'data': [sample.runtime for sample in result.samples.all_samples]}
 
 
@@ -114,8 +119,8 @@ def series_data(the_series=None, test=None):
 
 
 def capped(samples):
-    """Cap the number of samples to 4096."""
-    return min(samples, 4096)
+    """Cap the number of samples to 2048."""
+    return min(samples, 2048)
 
 
 def perform_hidden(measurement, *args):

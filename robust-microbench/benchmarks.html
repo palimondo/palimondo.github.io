@@ -370,6 +370,7 @@ let unicorns = [ // Benchmarks with issues
   'ObjectiveCBridgeStubToArrayOfNSString',
   // 565
   'ObjectiveCBridgeStubNSDateRefAccess', // bimodal
+  'RandomIntegersLCG', // bimodal, 82
 ]
 const setNameTrue = (m, name) => {m[name] = true; return m}
 let uniMap = unicorns.reduce(setNameTrue, {})
@@ -410,7 +411,7 @@ function plotSeriesOutliers(chart, benchmarks) {
 
   let series = [].concat(
     ...benchmarks
-    // .filter(not(isUnicorn))
+    .filter(not(isUnicorn))
     // .filter(b => !hasOverhead[b.name])
     .map(b => b.clean.filter(i1)
         // .filter(errorWithin(10000,10090))
@@ -433,7 +434,8 @@ function plotSeriesOutliers(chart, benchmarks) {
       y: errors,
       xbins: {
         start: 0,
-        end: 1000, size: 2,
+        end: 1000, size: 1,
+        // end: 1000, size: 2,
         // end: 4500, size: 9,
         // end: 60000, size: 120,
         // end: 100000, size: 200,
@@ -450,7 +452,7 @@ function plotSeriesOutliers(chart, benchmarks) {
     // barmode: "stack",
     barmode: "overlay",
     xaxis: {range: [0, 1000]}, yaxis: {range: [0, 240000]}, // 1k
-    // xaxis: {range: [0, 4500]}, yaxis: {range: [0, 240000]}, // 4.5k
+    // xaxis: {range: [0, 4500]}, yaxis: {range: [0, 802000]}, // 4.5k
     // xaxis: {range: [0, 60000]}, yaxis: {range: [0, 3000000]}, // 60k
     // xaxis: {range: [0, 100000]}, yaxis: {range: [0, 8000000]},  // 100k
     // xaxis: {range: [0, 600000]}, yaxis: {range: [0, 22000000]}, // all
@@ -546,6 +548,8 @@ var homeRange = {x: [0.75, 2], y: [30, -1]}
 function plotBenchmarks(chart, benchmarks) {
   // let range = [30, -1]
 
+  benchmarks = benchmarks.filter(b => b.name.includes('Flatten'))
+
   let layout = { // layout
     boxgap: .25,
     boxgroupgap: 0,
@@ -578,6 +582,7 @@ function plotBenchmarks(chart, benchmarks) {
   const traces = (benchmarks) => {
     let t = [ // data
       time((() => traceCleanBoxPlot(benchmarks)), `traceCleanBoxPlot ${benchmarks[0].variant}`),
+      // time((() => traceRawBoxPlot(benchmarks)), `traceRawBoxPlot ${benchmarks[0].variant}`),
       // time((() => traceAproximatedAllBoxPlot(benchmarks)), `traceAproximatedAllBoxPlot ${benchmarks[0].variant}`),
       // time((() => traceMemoryBoxPlot(benchmarks)), `traceMemoryBoxPlot ${benchmarks[0].variant}`),
       // traceRawMeans(benchmarks),
@@ -706,6 +711,18 @@ function traceCleanBoxPlot(bms) {
     name: `${bms[0].variant} Clean`,
     x : [].concat(...bms.map(
       b => boxplot5numSummary(b.all.fixed || b.all.clean))),
+    y: [].concat(...bms.map(namesFor5numSummary)),
+    type: 'box', boxpoints: false, orientation: 'h', opacity: 0.5,
+    // boxpoints: 'all', pointpos: -2, jitter: 1,
+    marker: { color: cleanColor[bms[0].variant]},
+    line : { width: 1.4}
+  }}
+
+function traceRawBoxPlot(bms) {
+  return {
+    name: `${bms[0].variant} Raw`,
+    x : [].concat(...bms.map(
+      b => boxplot5numSummary(b.all.raw))),
     y: [].concat(...bms.map(namesFor5numSummary)),
     type: 'box', boxpoints: false, orientation: 'h', opacity: 0.5,
     // boxpoints: 'all', pointpos: -2, jitter: 1,

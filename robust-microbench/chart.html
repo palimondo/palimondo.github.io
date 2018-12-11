@@ -817,8 +817,10 @@ function runningMeanVariance([k, M_, S_], x) {
 }
 
 function quartileIndices(n) {
-  Q2 = Math.floor(n / 2); Q1 = Math.floor(n / 4); Q3 = Q2 + Q1
-  return [Q1, Q2, Q3]
+  Q1 = Math.ceil(n * .25)
+  Q2 = Math.ceil(n * .5)
+  Q3 = Math.ceil(n * .75)
+  return [Q1, Q2, Q3].map(i => i - 1)
 }
 
 function computeStats(a) { // assumes `a` is sorted ascending
@@ -1279,7 +1281,11 @@ function generateNavigationForm(){ // Navigation form
 
   let benchmarkName = allSeries.name.split(' ')[0]
 
+  //  direct file or benchmark series access pattern
+  let directFile = getParam('f') != ''
+
   $('seriesVariant').value = getParam('v', fileSuffix)
+  $('benchmark').name = directFile ? 'f' : 'b'
   var benchmarks
   fetch('benchmarks.json').then(function(response) {
     return response.json();
@@ -1287,7 +1293,7 @@ function generateNavigationForm(){ // Navigation form
     benchmarks = data
     const option = (t) => {
       let o = document.createElement('option')
-      o.value = t
+      o.value = directFile ? (t + ' ' + fileSuffix) : t
       o.text = t
       return o
     }
