@@ -64,7 +64,7 @@ def run(t, s=3, i=1, verbose=True):  # default s & i are for calibration
     t = t if isinstance(t, str) else str(t)
     # import time
     # time.sleep(0.8)
-    r = BD.run(t, s, i, verbose, measure_memory=True)
+    r = BD.run(t, s, i, verbose=verbose, measure_memory=True)
     gc.collect()
     BD.last_run = r
     if r.name not in BD.results:
